@@ -17,7 +17,8 @@ die()  { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*"; exit 1; }
 ask()  { local v; read -r -p "$1" v </dev/tty; printf '%s' "$v"; }
 
 [ "$(id -u)" = 0 ] || die "запустите от root (или через sudo)"
-[ -f "$SITE/server/kabinet.js" ] || die "не найден $SITE/server/kabinet.js. Сначала скачайте репозиторий в $SITE (см. инструкцию)."
+# файлы сервера могут лежать в папке server/ или прямо в корне репозитория
+if [ -f "$SITE/server/kabinet.js" ]; then SRV="$SITE/server"; elif [ -f "$SITE/kabinet.js" ]; then SRV="$SITE"; else die "не найден kabinet.js в $SITE. Загрузите файлы сервера на GitHub (см. инструкцию) и выполните: cd $SITE && git pull"; fi
 . /etc/os-release
 case "$ID" in ubuntu|debian) ;; *) die "нужна Ubuntu или Debian, а здесь $PRETTY_NAME";; esac
 
@@ -114,7 +115,7 @@ Wants=network-online.target
 User=kabinet
 Group=kabinet
 EnvironmentFile=$ETC/env
-ExecStart=/usr/bin/node $SITE/server/kabinet.js
+ExecStart=/usr/bin/node $SRV/kabinet.js
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes
@@ -130,7 +131,7 @@ WantedBy=multi-user.target
 EOF
 
 say "Пароль репетитора"
-HAS_PASS=$(sudo -u kabinet env $(grep -v '^#' "$ETC/env" | xargs) node "$SITE/server/kabinet.js" check | grep -c '"pass":true' || true)
+HAS_PASS=$(sudo -u kabinet env $(grep -v '^#' "$ETC/env" | xargs) node "$SRV/kabinet.js" check | grep -c '"pass":true' || true)
 if [ "$HAS_PASS" = "0" ] || [ "${RESET_PASS:-}" = 1 ]; then
   while :; do
     read -r -s -p "Придумайте пароль для входа в кабинет (от 8 символов): " P1 </dev/tty; echo
@@ -138,7 +139,7 @@ if [ "$HAS_PASS" = "0" ] || [ "${RESET_PASS:-}" = 1 ]; then
     [ "$P1" = "$P2" ] && [ ${#P1} -ge 8 ] && break
     warn "Пароли не совпали или короче 8 символов, попробуйте снова"
   done
-  sudo -u kabinet env $(grep -v '^#' "$ETC/env" | xargs) KAB_NEW_PASS="$P1" node "$SITE/server/kabinet.js" passwd
+  sudo -u kabinet env $(grep -v '^#' "$ETC/env" | xargs) KAB_NEW_PASS="$P1" node "$SRV/kabinet.js" passwd
   unset P1 P2
 else ok "уже задан (сменить: kabinet passwd)"; fi
 
@@ -221,8 +222,8 @@ ufw --force enable >/dev/null
 ok "открыты: 22, 80, 443, $KAB_TURN_PORT, 49152-65535/udp"
 
 say "Автообновление сайта из GitHub и системы"
-install -m 0755 "$SITE/server/update.sh" /usr/local/sbin/kabinet-update
-install -m 0755 "$SITE/server/kabinet-cli.sh" /usr/local/bin/kabinet
+install -m 0755 "$SRV/update.sh" /usr/local/sbin/kabinet-update
+install -m 0755 "$SRV/kabinet-cli.sh" /usr/local/bin/kabinet
 cat > /etc/systemd/system/kabinet-update.service <<EOF
 [Unit]
 Description=Kabinet: pull site from GitHub

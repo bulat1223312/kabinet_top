@@ -395,7 +395,7 @@ async function site(req, res, url) {
   if (rel === '/' || rel === '') rel = '/index.html';
   const parts = rel.split('/').filter(Boolean);
   // закрытые места репозитория
-  if (parts.some(x => x.startsWith('.')) || ['server', 'node_modules'].includes(parts[0]) ||
+  if (parts.some(x => x.startsWith('.')) || ['server', 'node_modules', 'kabinet.js'].includes(parts[0]) ||
       /\.(sql|ts|sh|md|txt|env|db)$/i.test(rel)) return fail(res, 404, 'not found');
   const cache = /\.(woff2?|mjs|wasm)$/i.test(rel) ? 'public, max-age=604800' : 'no-cache';
   const r = await serveFile(req, res, SITE, path.normalize(parts.join('/')), cache);

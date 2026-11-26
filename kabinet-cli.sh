@@ -3,6 +3,7 @@
 ENVF=/etc/kabinet/env
 SITE=/opt/kabinet/site
 DATA=/var/lib/kabinet
+JS="$SITE/server/kabinet.js"; [ -f "$JS" ] || JS="$SITE/kabinet.js"
 [ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
 run() { sudo -u kabinet env $(grep -v '^#' "$ENVF" | xargs) "$@"; }
 case "${1:-}" in
@@ -16,8 +17,8 @@ case "${1:-}" in
     read -r -s -p "Новый пароль (от 8 символов): " P1; echo
     read -r -s -p "Ещё раз: " P2; echo
     [ "$P1" = "$P2" ] || { echo "Пароли не совпали"; exit 1; }
-    run KAB_NEW_PASS="$P1" node "$SITE/server/kabinet.js" passwd ;;
-  backup) run node "$SITE/server/kabinet.js" backup ;;
+    run KAB_NEW_PASS="$P1" node "$JS" passwd ;;
+  backup) run node "$JS" backup ;;
   backups) ls -lh "$DATA/backups" ;;
   restore)
     f="${2:-}"; [ -n "$f" ] || { echo "Укажите файл: kabinet restore kabinet-2026-11-25.db (список: kabinet backups)"; exit 1; }

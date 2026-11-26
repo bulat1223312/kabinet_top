@@ -12,6 +12,8 @@ new=$(git rev-parse HEAD)
 [ "$old" = "$new" ] && exit 0
 chmod -R a+rX "$SITE"
 changed=$(git diff --name-only "$old" "$new" 2>/dev/null || echo server/kabinet.js)
-if printf '%s\n' "$changed" | grep -q '^server/kabinet\.js$'; then systemctl restart kabinet; fi
-if printf '%s\n' "$changed" | grep -q '^server/kabinet-cli\.sh$'; then install -m 0755 server/kabinet-cli.sh /usr/local/bin/kabinet; fi
+if printf '%s\n' "$changed" | grep -Eq '^(server/)?kabinet\.js$'; then systemctl restart kabinet; fi
+for f in server/kabinet-cli.sh kabinet-cli.sh; do
+  if printf '%s\n' "$changed" | grep -qx "$f"; then install -m 0755 "$f" /usr/local/bin/kabinet; fi
+done
 logger -t kabinet "сайт обновлён до ${new:0:7}"
