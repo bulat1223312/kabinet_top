@@ -336,6 +336,23 @@ pre.sol{background:var(--sf2);border-radius:12px;padding:12px;overflow:auto;font
 .subbar button i{font-style:normal;font-size:11px;color:var(--mut)}
 .subbar button.act{background:var(--ink);color:#fff}.subbar button.act i{color:#cfc9e6}
 .chip.soft{background:var(--sf2);color:var(--ink2)}
+/* задания с разметкой: формулы, таблицы, код */
+.rich{white-space:normal!important;line-height:1.6;overflow-x:auto;font-size:16px}
+.hw .rich{margin:10px 0}
+.rich p{margin:0 0 .55em}.rich p:last-child{margin-bottom:0}
+.rich img{max-width:100%;height:auto;vertical-align:middle}
+.rich img.m{display:inline;vertical-align:middle;max-height:3.2em;margin:0 1px}
+.rich img:not(.m){display:block;margin:10px 0;border-radius:10px;background:#fff}
+.rich table{border-collapse:collapse;margin:10px 0;font-size:15px;background:#fff}
+.rich td,.rich th{border:1px solid #DAD6E8;padding:4px 10px;text-align:center}
+.rich pre,.rich .verbatim,.rich .lstlisting{background:#17141F;color:#E9E6F5;border-radius:12px;padding:12px 14px;font:13.5px/1.55 var(--fm);white-space:pre;overflow:auto;margin:10px 0}
+.rich div.lstlisting{white-space:normal}
+.rich code,.rich tt{font-family:var(--fm);font-size:.92em}
+.rich .center,.rich center{text-align:center}
+.rich ul,.rich ol{padding-left:22px;margin:6px 0}
+div.sol.rich{background:var(--sf2);border-radius:12px;padding:14px 16px;font-size:15px}
+.tfiles{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.mbox .rich,.mbox .rich p{color:var(--ink)}.mbox .rich p{margin-top:0}
 </style>
 </head>
 <body>
@@ -1836,18 +1853,32 @@ const Imp={
    for(const row of $$('.irow',w)){if(!$('[data-k=on]',row).checked)continue;const r=rows[+row.dataset.i];await Bank.add({exam:exv,num:$('[data-k=num]',row).value||'?',ans:$('[data-k=ans]',row).value.trim().slice(0,200),kind:$('[data-k=kind]',row).value,text:(r.text||'').slice(0,4000),src},r.img);n++}
    await Bank.save();w.remove();toast('Сохранено заданий: '+n);BV.ex=exv;BV.num=null;if(location.hash==='#/bank')viewBank();else location.hash='#/bank'}}};
 
+/* ---------- задания с разметкой (формулы, таблицы, код) ---------- */
+const RICH_TAGS=new Set('P BR B I U S EM STRONG SUB SUP SPAN DIV TABLE THEAD TBODY TR TD TH PRE CODE UL OL LI IMG CENTER SMALL BIG HR TT'.split(' '));
+const richCache=new Map();
+function richSafe(html){if(richCache.has(html))return richCache.get(html);const d=new DOMParser().parseFromString('<div>'+String(html||'')+'</div>','text/html');
+ const clean=n=>{for(const c of [...n.childNodes]){if(c.nodeType===3)continue;if(c.nodeType!==1){c.remove();continue}
+  if(!RICH_TAGS.has(c.tagName)){if(/^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|SVG|MATH|TEMPLATE|LINK|META|FORM|INPUT|BUTTON|TEXTAREA|SELECT|VIDEO|AUDIO|NOSCRIPT)$/.test(c.tagName)){c.remove();continue}clean(c);c.replaceWith(...c.childNodes);continue}
+  for(const a of [...c.attributes]){const k=a.name,v=a.value;const ok=(k==='class'&&/^[\w -]{0,80}$/.test(v))||((k==='colspan'||k==='rowspan')&&/^\d{1,2}$/.test(v))||k==='alt'||(k==='src'&&c.tagName==='IMG'&&/^(\/api\/sk\/[^"'\s]+|data:image\/(png|jpeg|gif|webp);base64,[\w+\/=]+)$/.test(v))||(k==='style'&&/^text-align:(left|right|center)$/.test(v));if(!ok)c.removeAttribute(k)}
+  if(c.tagName==='IMG'){if(!c.getAttribute('src')){c.replaceWith(c.getAttribute('alt')||'');continue}c.setAttribute('loading','lazy')}
+  clean(c)}};
+ clean(d.body.firstChild);const out=d.body.firstChild.innerHTML;if(richCache.size>300)richCache.delete(richCache.keys().next().value);richCache.set(html,out);return out}
+function filesHTML(t){return (t.files||[]).filter(f=>f&&/^\/api\/sk\//.test(f.url||'')).map(f=>`<a class="btn mini" href="${esc(f.url)}" download="${esc(f.name||'')}">${ic('down')}Скачать ${esc(f.name||'файл')}</a>`).join(' ')}
+function taskBody(t,img){if(t.html)return `<div class="ttext rich">${richSafe(t.html)}</div>${t.files&&t.files.length?`<p class="tfiles">${filesHTML(t)}</p>`:''}`;return (t.text?`<p class="ttext">${esc(t.text)}</p>`:'')+(img||'')}
+function solHTML(r){if(r&&r.solh)return `<details><summary>Решение</summary><div class="sol rich">${richSafe(r.solh)}</div></details>`;if(r&&r.sol&&typeof r.sol==='string')return `<details><summary>Решение</summary><pre class="sol">${esc(r.sol)}</pre></details>`;return''}
+
 /* ---------- карточка задания: просмотр и правка ---------- */
-async function packTaskView(t){const img=t.img===false?null:await taskImg(t.id);const w=document.createElement('div');w.className='modal';
- w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2><p class="hint" style="margin-top:-6px">Готовая база${t.sub?' · '+esc(t.sub):''}</p>${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
-  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}<p>Ответ: <b>${esc(t.ans||'—')}</b></p>${t.sol?`<details><summary>Решение</summary><pre class="sol">${esc(t.sol)}</pre></details>`:''}
+async function packTaskView(t){const img=t.img===false?null:await taskImg(t.id);let sol='';if(t.sol){try{const r=await(await Packs.req('/api/practice/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:[{id:t.id}]})})).json();sol=solHTML(r[t.id])}catch(e){}}const w=document.createElement('div');w.className='modal';
+ w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2><p class="hint" style="margin-top:-6px">${esc(t.src&&t.src!=='Готовая база'?t.src:'Готовая база')}${t.sub?' · '+esc(t.sub):''}</p>${taskBody(t,img?`<img class="tbig" src="${img}" alt="">`:'')}
+  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}<p>Ответ: <b>${esc(t.ans||'—')}</b></p>${sol}
   <label class="chkl"><input type="checkbox" data-k="hide"${t.hide?' checked':''}> Скрыть из тренажёра учеников</label>
   <div class="mact"><button data-m="no">Закрыть</button></div></div>`;
  document.body.appendChild(w);const close=()=>w.remove();
  w.addEventListener('click',e=>{if(e.target===w)return close();const b=e.target.closest('[data-m]');if(!b)return;if(b.dataset.m==='file')TaskFiles.download(t.file);if(b.dataset.m==='no')close()});
  $('[data-k=hide]',w).onchange=e=>{Packs.hide([t.id],e.target.checked);viewBank()}}
 async function editTask(t){if(t.pack)return packTaskView(t);const img=await taskImg(t.id),E=EXAMS[t.exam];const w=document.createElement('div');w.className='modal';
- w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2>${t.fig||t.img===false?`<p class="ttext">${esc(t.text||'')}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
-  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}${t.sol?`<details><summary>Решение</summary><pre class="sol">${esc(t.sol)}</pre></details>`:''}
+ w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2>${t.html?taskBody(t):`${t.fig||t.img===false?`<p class="ttext">${esc(t.text||'')}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}`}
+  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}${solHTML(t)}
   <div class="form"><span>Экзамен</span><select data-k="exam">${Object.entries(EXAMS).map(([k,v])=>`<option value="${k}"${k===t.exam?' selected':''}>${esc(v.t)}</option>`).join('')}</select>
   <span>Номер</span><input data-k="num" value="${esc(t.num)}" style="max-width:90px"><span>Ответ</span><input data-k="ans" value="${esc(t.ans)}" placeholder="несколько вариантов — через |">
   <select data-k="kind">${Object.entries(KIND_T).map(([k,v])=>`<option value="${k}"${k===t.kind?' selected':''}>${v}</option>`).join('')}</select></div>
@@ -1894,7 +1925,7 @@ async function assignTo(s,ids){if(!Cloud.on)return toast('Для домашни�
  const title=$('#asgt',w).value.trim()||'ДЗ',show=$('#asgs',w).checked;w.remove();if(!ok)return;
  toast('Отправляем задание…',60000);const id=uid(),k=Cloud.wkey();
  try{for(const t of tasks){const img=t.img===false?null:await taskImg(t.id);if(img)await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'timg:'+t.id,p_data:img})}
-  await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'asg:'+id,p_data:{id,title,at:Date.now(),show,tasks:tasks.map(t=>({id:t.id,exam:t.exam,num:t.num,kind:t.kind,text:t.img===false||t.fig?t.text:'',img:t.img!==false,...(t.file?{file:t.file}:{})}))}});
+  await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'asg:'+id,p_data:{id,title,at:Date.now(),show,tasks:tasks.map(t=>({id:t.id,exam:t.exam,num:t.num,kind:t.kind,text:t.html?'':t.img===false||t.fig?t.text:'',img:t.img!==false,...(t.file?{file:t.file}:{}),...(t.html?{html:t.html}:{}),...(t.files?{files:t.files}:{})}))}});
   await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'key:'+id,p_data:{show,ans:Object.fromEntries(tasks.map(t=>[t.id,t.ans||''])),kind:Object.fromEntries(tasks.map(t=>[t.id,t.kind]))}});
   s.asgs=s.asgs||[];s.asgs.unshift({id,title,at:Date.now(),n:tasks.length});touch(s);await Cloud.pushInfo(s);toast('Задание отправлено ученику');BV.sel.clear();if(curS===s)viewStudent(s)}
  catch(e){console.warn(e);toast('Не получилось отправить: проверьте облако в настройках',5000)}}
@@ -1906,7 +1937,7 @@ async function asgResults(s,a){const k=Cloud.wkey(),w=document.createElement('di
   const r=sub&&sub.res?sub.res[t.id]:undefined,given=sub&&sub.answers?sub.answers[t.id]:'';
   return `<div class="rrow"><div class="rhead"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':r===true?'<span class="chip ok">верно</span>':r===false?'<span class="chip neg">неверно</span>':'<span class="chip">не сдано</span>'}
    ${t.kind!=='photo'?`<span>ответ ученика: <b>${esc(given||'—')}</b>, правильный: <b>${esc(key&&key.ans[t.id]||'—')}</b></span>`:`<span class="grow"></span><span>баллы</span><input type="number" min="0" max="10" data-pt="${t.id}" value="${esc(gr.pts[t.id]??'')}" style="width:70px">`}</div>
-   ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
+   ${taskBody(t,img?`<img class="tbig" src="${img}" alt="">`:'')}
    ${ph.length?`<div class="phs">${ph.map(p=>`<a href="${p}" target="_blank" rel="noopener"><img src="${p}" alt="Фото решения"></a>`).join('')}</div>`:''}
    ${t.kind==='photo'?`<input data-cm="${t.id}" placeholder="комментарий ученику" value="${esc(gr.com[t.id]||'')}">`:''}</div>`}));
  w.innerHTML=`<div class="mbox wide tall"><h2>${esc(a.title)}</h2><p>${sub?`Сдано ${new Date(sub.at).toLocaleString('ru-RU')}, попыток: ${sub.tries}. Автопроверка: <b>${sub.score} из ${sub.total}</b>.`:'Ученик ещё не сдавал это задание.'}</p>${rows.join('')}
@@ -1926,7 +1957,7 @@ async function viewHw(token,aid){const my=rid;document.title='Домашнее �
  app.innerHTML=navHTML(`<a class="btn ghost" href="#/join/${esc(token)}">${ic('back')}Кабинет</a>`)+`<main class="wrap hw"><div class="shead rise"><div><h1>${esc(a.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Заданий: ${a.tasks.length}${sub?` · сдано, автопроверка: <b>${sub.score} из ${sub.total}</b>`:''}</p></div></div>
   ${a.tasks.map((t,i)=>{const r=res[t.id];return `<section class="panel hwt rise" data-id="${t.id}"><div class="rhead"><b>${i+1}.</b><span class="chip">${esc(numLabel(t.exam,t.num))}</span>
    ${t.kind==='photo'?(gr.pts[t.id]!=null?`<span class="chip ok">оценка: ${esc(gr.pts[t.id])}</span>`:sub?'<span class="chip">на проверке</span>':''):r===true?'<span class="chip ok">верно</span>':r===false?'<span class="chip neg">неверно</span>':''}</div>
-   ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${t.img?`<img class="tbig" data-timg="${t.id}" alt="Условие задания">`:''}${t.file?`<p><button class="mini" data-hwfile="${t.id}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
+   ${taskBody(t,t.img?`<img class="tbig" data-timg="${t.id}" alt="Условие задания">`:'')}${t.file?`<p><button class="mini" data-hwfile="${t.id}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
    ${t.kind==='photo'?`<div class="phs" id="ph-${t.id}"></div><label class="btn">${ic('cam')}Добавить фото решения<input type="file" accept="image/*" multiple hidden data-ph="${t.id}"></label>${gr.com[t.id]?`<p class="hwbig">${esc(gr.com[t.id])}</p>`:''}`
     :`<div class="form"><input data-ans="${t.id}" value="${esc(draft[t.id]??prev[t.id]??'')}" placeholder="Ваш ответ" autocomplete="off">${right[t.id]&&r===false?`<span>правильный ответ: <b>${esc(right[t.id])}</b></span>`:''}</div>`}</section>`}).join('')}
   <div class="rise" style="display:flex;gap:10px;align-items:center;margin-top:20px"><button class="pri" id="hwsend" style="height:48px;padding:0 24px">${ic('play',1)}${sub?'Отправить ещё раз':'Отправить ответы'}</button><span class="hint" style="margin:0">Ответы проверяются автоматически, решения на фото проверит репетитор.</span></div></main>`;
@@ -2034,11 +2065,11 @@ async function viewPractice(token,ex,mode,arg){const my=rid;PR.token=token;PR.st
 }
 function prTaskHTML(t,i,variant){const done=PR.res[t.id];return `<section class="panel hwt prt${PR.anim?' rise':''}" data-id="${esc(t.id)}">
   <div class="rhead">${variant?`<b>${i+1}.</b>`:''}<span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.sub?`<span class="chip soft">${esc(t.sub)}</span>`:''}${t.kind==='photo'?'<span class="chip warn">развёрнутый ответ</span>':''}<span class="grow"></span>${done?(done.ok===true?'<span class="chip ok">верно</span>':done.ok===false?'<span class="chip neg">неверно</span>':''):''}</div>
-  ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${t.img?`<img class="tbig" src="${prImg(t.id)}" alt="Условие задания" loading="lazy">`:''}
+  ${taskBody(t,t.img?`<img class="tbig" src="${prImg(t.id)}" alt="Условие задания" loading="lazy">`:'')}
   ${t.file?`<p><button class="mini" data-a="prfile" data-id="${esc(t.id)}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
   ${t.kind==='photo'?`<p class="hint">Решите на листе или в редакторе, затем откройте ответ и честно отметьте результат.</p>`:`<div class="form"><input data-pa="${esc(t.id)}" placeholder="${t.kind==='choice'?'Буквы ответа, например AC':'Ваш ответ'}" autocomplete="off" value="${esc(done&&done.given||'')}"${done&&!variant?' disabled':''}></div>`}
   <div class="prfb" id="fb-${esc(t.id)}">${done?prFeedback(t,done):''}</div></section>`}
-function prFeedback(t,r){if(!r||(!r.shown&&r.ok==null))return'';return `${r.ok===false||t.kind==='photo'||r.shown?`<p>Ответ: <b>${esc(r.ans||'—')}</b></p>`:''}${r.sol?`<details><summary>Решение</summary><pre class="sol">${esc(r.sol)}</pre></details>`:''}
+function prFeedback(t,r){if(!r||(!r.shown&&r.ok==null))return'';return `${r.ok===false||t.kind==='photo'||r.shown?`<p>Ответ: <b>${esc(r.ans||'—')}</b></p>`:''}${solHTML(r)}
  ${t.kind==='photo'&&r.self==null?`<div class="form"><button class="mini" data-a="prself" data-id="${esc(t.id)}" data-v="1">${ic('play',1)}Решил верно</button><button class="mini" data-a="prself" data-id="${esc(t.id)}" data-v="0">Ошибся</button></div>`:''}`}
 async function prSolve(ex,mode,arg){const my=rid,tok=PR.token;PR.mode=mode;PR.res={};
  app.innerHTML='<div class="joinbox"><span class="spin"></span>Загружаем задания…</div>';
@@ -2121,7 +2152,7 @@ async function packImport(files){files=[].concat(files);let tasks=[];
  if(!await sure(`Добавить ${fresh.length} ${plural(fresh.length,'задание','задания','заданий')}?`,`Уже в базе: ${tasks.length-fresh.length}. Новые задания добавятся к вашим, ничего не удалится.`,'Добавить'))return;
  const at=Date.now();let i=0;toast('Добавляю задания…',120000);Vault.bulk=true;
  try{for(const t of fresh){const img=t.img;const x={id:t.id,exam:t.exam,num:String(t.num),kind:t.kind||'short',text:t.text||'',ans:String(t.ans??''),src:t.src||'Набор',at:at+(i++)};
-  if(t.fig)x.fig=true;if(t.file)x.file=t.file;if(t.sol)x.sol=t.sol;if(!img)x.img=false;Bank.meta.push(x);if(img)await DB.set('timg:'+x.id,img);
+  if(t.fig)x.fig=true;if(t.file)x.file=t.file;if(t.sol)x.sol=t.sol;if(t.html)x.html=t.html;if(t.solh)x.solh=t.solh;if(t.files)x.files=t.files;if(!img)x.img=false;Bank.meta.push(x);if(img)await DB.set('timg:'+x.id,img);
   if(i%500===0)toast(`Добавляю задания: ${i} из ${fresh.length}…`,120000)}
   await Bank.save()}finally{Vault.bulk=false;Vault.saveMeta();Vault.later(300)}
  toast('Добавлено: '+fresh.length+(Vault.on?'. Отправляю на сервер — это займёт несколько минут.':''),5000);viewBank()}

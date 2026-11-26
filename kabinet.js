@@ -292,20 +292,25 @@ fs.mkdirSync(PACK_DIR, { recursive: true });
 const PK = { v: 0, byExam: new Map(), byId: new Map() };
 function packsLoad() {
   PK.byExam = new Map(); PK.byId = new Map();
-  for (const f of fs.readdirSync(PACK_DIR).filter(f => /^[a-z_]+\.json$/.test(f))) {
-    try { const d = JSON.parse(fs.readFileSync(path.join(PACK_DIR, f), 'utf8')); const ex = f.slice(0, -5);
-      const tasks = (d.tasks || []).filter(t => t && t.id && t.exam === ex).map(t => ({ ...t, pack: true }));
-      PK.byExam.set(ex, { exam: ex, name: d.name || 'Готовая база', made: d.made || '', tasks });
+  const files = fs.readdirSync(PACK_DIR).filter(f => /^[a-z_]+(\.[a-z0-9_]+)?\.json$/.test(f)).sort();
+  for (const f of files) {
+    try { const d = JSON.parse(fs.readFileSync(path.join(PACK_DIR, f), 'utf8')); const ex = f.split('.')[0], tag = f.split('.').length > 2 ? f.split('.')[1] : '';
+      const tasks = (d.tasks || []).filter(t => t && t.id && t.exam === ex && !PK.byId.has(t.id)).map(t => ({ ...t, pack: true }));
+      const cur = PK.byExam.get(ex) || { exam: ex, name: d.name || 'Готовая база', made: d.made || '', tasks: [], parts: [] };
+      cur.tasks = cur.tasks.concat(tasks); cur.parts.push({ tag, name: d.name || 'Готовая база', n: tasks.length, made: d.made || '' }); PK.byExam.set(ex, cur);
       for (const t of tasks) PK.byId.set(t.id, t);
     } catch (e) { console.error('pack', f, e.message); }
   }
+  try { PK.mt = fs.statSync(PACK_DIR).mtimeMs; } catch (e) {}
   PK.v++;
 }
+function packsFresh() { try { if (fs.statSync(PACK_DIR).mtimeMs !== PK.mt) packsLoad(); } catch (e) {} }
 packsLoad();
-const packMeta = t => { const { img, ...rest } = t; return { ...rest, img: img ? true : false }; };
+const packMeta = t => { const { img, solh, sol, ...rest } = t; return { ...rest, img: img ? true : false, sol: !!(sol || solh) }; };
 
 let PC = { bu: -1, su: -1, pv: -1, tasks: [], byId: new Map(), tokens: new Set(), off: false };
 function practiceData() {
+  packsFresh();
   const b = Q.vGet.get('bank'), st = Q.vGet.get('state');
   const bu = b ? b.u : 0, su = st ? st.u : 0;
   if (bu === PC.bu && su === PC.su && PK.v === PC.pv) return PC;
@@ -317,7 +322,7 @@ function practiceData() {
   PC = { bu, su, pv: PK.v, tasks, byId, tokens, off };
   return PC;
 }
-const pub = t => ({ id: t.id, exam: t.exam, num: t.num, kind: t.kind || 'short', text: t.img === false || t.fig || (t.pack && !t.img) ? (t.text || '') : '', img: t.pack ? !!t.img : t.img !== false, fig: !!t.fig, file: t.file || null, src: t.src || '', sub: t.sub || '' });
+const pub = t => ({ id: t.id, exam: t.exam, num: t.num, kind: t.kind || 'short', text: t.img === false || t.fig || (t.pack && !t.img) ? (t.text || '') : '', img: t.pack ? !!t.img : t.img !== false, fig: !!t.fig, file: t.file || null, src: t.src || '', sub: t.sub || '', ...(t.html ? { html: t.html } : {}), ...(t.files ? { files: t.files } : {}) });
 const numKey = n => { const m = /^(\d+)(?:\.(\d+))?/.exec(n || ''); return m ? +m[1] * 100 + (+m[2] || 0) : 1e6; };
 async function practice(req, res, url) {
   const ip = clientIp(req);
@@ -336,10 +341,10 @@ async function practice(req, res, url) {
     const ex = {}, vars = {};
     for (const t of T) {
       (ex[t.exam] = ex[t.exam] || {})[t.num] = (ex[t.exam][t.num] || 0) + 1;
-      if (t.src && t.src !== 'Своя база' && !t.pack) { const k = t.exam + '|' + t.src; vars[k] = vars[k] || { exam: t.exam, name: t.src, n: 0 }; vars[k].n++; }
+      const vn = t.pack ? t.var : (t.src && t.src !== 'Своя база' ? t.src : ''); if (vn) { const k = t.exam + '|' + vn; vars[k] = vars[k] || { exam: t.exam, name: vn, n: 0, nums: new Set() }; vars[k].n++; vars[k].nums.add(t.num); }
     }
     const prog = {}; for (const r of PQ.all.all(token)) { const t = D.byId.get(r.id); if (t) prog[r.id] = [r.ok, r.last, r.tries, r.at, t.exam, t.num]; }
-    return sendJson(res, 200, { exams: ex, variants: Object.values(vars).filter(v => v.n >= 2), progress: prog });
+    return sendJson(res, 200, { exams: ex, variants: Object.values(vars).filter(v => v.n >= 2 && v.nums.size >= 2).map(v => ({ exam: v.exam, name: v.name, n: v.n })), progress: prog });
   }
   if (p === '/api/practice/list') {
     const ex = q.get('ex'), num = q.get('num');
@@ -348,7 +353,11 @@ async function practice(req, res, url) {
   if (p === '/api/practice/variant') {
     const ex = q.get('ex'), name = q.get('name');
     let list;
-    if (name) list = T.filter(t => t.exam === ex && t.src === name);
+    if (name) {
+      list = T.filter(t => t.exam === ex && (t.pack ? t.var === name : t.src === name));
+      // вариант прошлых лет из готовой базы: по одному заданию на номер, как на экзамене
+      if (list.length && list.every(t => t.pack)) { const by = new Map(); for (const t of list.sort((a, b) => String(a.id) < String(b.id) ? -1 : 1)) if (!by.has(t.num)) by.set(t.num, t); list = [...by.values()]; }
+    }
     else {
       const done = new Set(PQ.all.all(token).filter(r => r.ok).map(r => r.id));
       const by = {}; for (const t of T) if (t.exam === ex) (by[t.num] = by[t.num] || []).push(t);
@@ -370,14 +379,14 @@ async function practice(req, res, url) {
     return res.end(buf);
   }
   if (p === '/api/practice/check' && req.method === 'POST') {
-    if (tutor && !token) { const out = {}; for (const it of (Array.isArray(body.items) ? body.items : [])) { const t = PK.byId.get(String(it.id || '')); if (t) out[t.id] = { ans: t.ans || '', sol: t.sol || '' }; } return sendJson(res, 200, out); }
+    if (tutor && !token) { const out = {}; for (const it of (Array.isArray(body.items) ? body.items : [])) { const t = PK.byId.get(String(it.id || '')); if (t) out[t.id] = { ans: t.ans || '', sol: t.sol || '', solh: t.solh || '' }; } return sendJson(res, 200, out); }
     const out = {};
     const items = Array.isArray(body.items) ? body.items.slice(0, 80) : [];
     for (const it of items) {
       const t = D.byId.get(String(it.id || ''));
       if (!t || hide.has(t.id)) continue;
       const kind = t.kind || 'short';
-      const r = { ans: t.ans || '', sol: t.sol || '' };
+      const r = { ans: t.ans || '', sol: t.sol || '', solh: t.solh || '' };
       if (kind === 'photo' || it.reveal) {
         if (typeof it.self === 'boolean' && token && !tutor) PQ.put.run(token, t.id, +it.self, +it.self, Date.now());
       } else {
@@ -393,9 +402,10 @@ async function practice(req, res, url) {
 
 async function packsApi(req, res, url) {
   if (!session(req)) return fail(res, 401, 'Нужно войти');
+  packsFresh();
   const ex = url.searchParams.get('exam') || '';
   if (url.pathname === '/api/packs' && req.method === 'GET') {
-    return sendJson(res, 200, [...PK.byExam.values()].map(p => { const nums = {}, subs = {}; for (const t of p.tasks) { nums[t.num] = (nums[t.num] || 0) + 1; } return { exam: p.exam, name: p.name, made: p.made, n: p.tasks.length, nums }; }));
+    return sendJson(res, 200, [...PK.byExam.values()].map(p => { const nums = {}, subs = {}; for (const t of p.tasks) { nums[t.num] = (nums[t.num] || 0) + 1; } return { exam: p.exam, name: p.name, made: p.made, n: p.tasks.length, nums, parts: p.parts }; }));
   }
   if (url.pathname === '/api/packs/tasks') { const p = PK.byExam.get(ex); return sendJson(res, 200, p ? p.tasks.map(packMeta) : []); }
   if (url.pathname === '/api/packs/upload' && req.method === 'POST') {
@@ -412,10 +422,38 @@ async function packsApi(req, res, url) {
   }
   if (url.pathname === '/api/packs' && req.method === 'DELETE') {
     if (!/^[a-z_]{2,20}$/.test(ex)) return fail(res, 400, 'bad exam');
-    try { fs.unlinkSync(path.join(PACK_DIR, ex + '.json')); } catch (e) {}
+    const tag = url.searchParams.get('tag') || '';
+    if (tag && !/^[a-z0-9_]{1,20}$/.test(tag)) return fail(res, 400, 'bad tag');
+    try { fs.unlinkSync(path.join(PACK_DIR, ex + (tag ? '.' + tag : '') + '.json')); } catch (e) {}
     packsLoad(); return sendJson(res, 200, { ok: true });
   }
   return fail(res, 404, 'not found');
+}
+
+/* ---------------- картинки и файлы заданий Школково ---------------- */
+// Формулы и рисунки из базы Школково подгружаются через наш сервер и кэшируются на диске.
+const SK_DIR = path.join(DATA, 'shkolkovo', 'cache');
+const SK_PATH = /^\/api\/sk(\/(?:api\/latex-service\/v1\/GetSession\/\d{1,12}\/[\w.\-]{1,120}|st\/[^?#]{1,300}|public\/[^?#]{1,300}|upload[s]?\/[^?#]{1,300}|files?\/[^?#]{1,300}))$/;
+const SK_TYPES = { svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', txt: 'text/plain; charset=utf-8', csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', ods: 'application/vnd.oasis.opendocument.spreadsheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword', zip: 'application/zip', pdf: 'application/pdf', py: 'text/plain; charset=utf-8' };
+const skWait = new Map();
+async function skProxy(req, res, url) {
+  if (!allow('sk:' + clientIp(req), 60, 600)) return fail(res, 429, 'slow down');
+  const m = SK_PATH.exec(url.pathname); if (!m || m[1].includes('..')) return fail(res, 404, 'not found');
+  const ext = (/\.([a-z0-9]{1,5})$/i.exec(m[1]) || [])[1]; const type = SK_TYPES[(ext || '').toLowerCase()];
+  if (!type) return fail(res, 404, 'not found');
+  fs.mkdirSync(SK_DIR, { recursive: true });
+  const f = path.join(SK_DIR, crypto.createHash('sha1').update(m[1]).digest('hex') + '.' + ext.toLowerCase());
+  const send = buf => { res.writeHead(200, { 'Content-Type': type, 'Content-Length': buf.length, 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff', ...(type === 'image/svg+xml' ? { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" } : {}), ...(/^image\//.test(type) ? {} : { 'Content-Disposition': 'attachment' }) }); res.end(buf); };
+  try { return send(fs.readFileSync(f)); } catch (e) {}
+  try {
+    if (!skWait.has(f)) skWait.set(f, (async () => {
+      const r = await fetch((process.env.SK_BASE || 'https://3.shkolkovo.online') + m[1], { headers: { 'User-Agent': 'Mozilla/5.0 (kabinet tutor)' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 30e6) throw new Error('too big');
+      fs.writeFileSync(f + '.tmp', buf); fs.renameSync(f + '.tmp', f); return buf;
+    })().finally(() => setTimeout(() => skWait.delete(f), 1000)));
+    return send(await skWait.get(f));
+  } catch (e) { return fail(res, 502, 'Не удалось получить файл'); }
 }
 
 /* ---------------- материалы ФИПИ для репетитора ---------------- */
@@ -653,6 +691,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/practice/')) return await practice(req, res, url);
     if (p.startsWith('/api/fipi/')) return await fipi(req, res, url);
     if (p === '/api/packs' || p.startsWith('/api/packs/')) return await packsApi(req, res, url);
+    if (p.startsWith('/api/sk/')) return await skProxy(req, res, url);
     if (p.startsWith('/api/')) return await api(req, res, url);
     if (req.method === 'GET' || req.method === 'HEAD') return await site(req, res, url);
     return fail(res, 405, 'method not allowed');
