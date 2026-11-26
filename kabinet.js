@@ -45,6 +45,8 @@ create table if not exists data (token text not null, item text not null, body t
 create table if not exists vault (k text primary key, body text, u integer not null, size integer not null default 0);
 create table if not exists session (id text primary key, exp integer not null, ip text, ua text, created integer not null);
 create table if not exists meta (k text primary key, v text);
+create table if not exists practice (token text not null, id text not null, ok integer not null, last integer not null,
+  tries integer not null, at integer not null, primary key (token, id));
 `);
 const Q = {
   ownerGet: db.prepare('select key_hash from owner where token = ?'),
@@ -175,8 +177,19 @@ function ownerOk(token, key) {
   return !!r && isStr(key) && crypto.timingSafeEqual(Buffer.from(r.key_hash), Buffer.from(sha(key)));
 }
 function need(cond, code, msg) { if (!cond) throw new HttpErr(code, msg); }
-const knorm = x => String(x == null ? '' : x).trim().toLowerCase().replace(/,/g, '.').replace(/\s+/g, '');
-const NUM = /^-?[0-9]+(\.[0-9]+)?$/;
+const knorm = x => String(x == null ? '' : x).trim().toLowerCase().replace(/[−–—]/g, '-').replace(/,/g, '.').replace(/\s+/g, '');
+const NUM = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/;
+// выбор вариантов: буквы в любом порядке, кириллица и латиница считаются одинаково
+const LAT = { 'а': 'a', 'в': 'b', 'с': 'c', 'д': 'd', 'е': 'e', 'ф': 'f', 'б': 'b', 'г': 'g' };
+const cnorm = x => [...String(x == null ? '' : x).toLowerCase().replace(/[^a-zа-яё]/g, '')].map(c => LAT[c] || c).sort().join('');
+
+function checkOne(kind, key, given) {
+  for (const alt of String(key == null ? '' : key).split('|')) {
+    const x = kind === 'choice' ? cnorm(alt) : knorm(alt), y = kind === 'choice' ? cnorm(given) : knorm(given);
+    if (x !== '' && (x === y || (NUM.test(x) && NUM.test(y) && Number(x) === Number(y)))) return true;
+  }
+  return false;
+}
 
 const RPC = {
   kab_put(a) {
@@ -240,11 +253,7 @@ const RPC = {
       const given = String(ans[n] == null ? '' : ans[n]).slice(0, 300);
       if (kind === 'photo') { res[n] = null; continue; }
       total++;
-      let good = false;
-      for (const alt of String(k.ans[n] == null ? '' : k.ans[n]).split('|')) {
-        const x = knorm(alt), y = knorm(given);
-        if (x !== '' && (x === y || (NUM.test(x) && NUM.test(y) && Number(x) === Number(y)))) good = true;
-      }
+      const good = checkOne(kind, k.ans[n], given);
       if (good) score++;
       res[n] = good;
       if (show) right[n] = k.ans[n] == null ? null : String(k.ans[n]);
@@ -257,6 +266,181 @@ const RPC = {
     return JSON.stringify(out);
   },
 };
+
+/* ---------------- тренажёр для учеников ---------------- */
+// Задания берутся из базы репетитора (его данные на сервере). Ответы ученику не отдаются, проверка — здесь.
+const PQ = {
+  get: db.prepare('select ok, last, tries, at from practice where token = ? and id = ?'),
+  put: db.prepare(`insert into practice (token, id, ok, last, tries, at) values (?, ?, ?, ?, 1, ?)
+    on conflict (token, id) do update set ok = max(practice.ok, excluded.ok), last = excluded.last, tries = practice.tries + 1, at = excluded.at`),
+  all: db.prepare('select id, ok, last, tries, at from practice where token = ?'),
+  asg: db.prepare("select item, body from data where token = ? and substr(item, 1, 4) = 'asg:'"),
+  sub: db.prepare("select 1 from data where token = ? and item = ?"),
+};
+// задания из несданных домашек ученика в тренажёре не показываются, чтобы нельзя было подсмотреть ответ
+function hwIds(token) {
+  const s = new Set();
+  for (const r of PQ.asg.all(token)) {
+    if (PQ.sub.get(token, 'sub:' + r.item.slice(4))) continue;
+    try { for (const t of JSON.parse(r.body).tasks || []) s.add(t.id); } catch (e) {}
+  }
+  return s;
+}
+let PC = { bu: -1, su: -1, tasks: [], byId: new Map(), tokens: new Set(), off: false };
+function practiceData() {
+  const b = Q.vGet.get('bank'), st = Q.vGet.get('state');
+  const bu = b ? b.u : 0, su = st ? st.u : 0;
+  if (bu === PC.bu && su === PC.su) return PC;
+  let tasks = [], tokens = new Set(), off = false;
+  try { const a = b && b.body ? JSON.parse(b.body) : []; if (Array.isArray(a)) tasks = a.filter(t => t && t.id && t.exam && !t.hide); } catch (e) {}
+  try { const sj = st && st.body ? JSON.parse(st.body) : null; if (sj) { for (const x of sj.students || []) if (x && x.token) tokens.add(x.token); off = !!(sj.settings && sj.settings.practiceOff); } } catch (e) {}
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  PC = { bu, su, tasks, byId, tokens, off };
+  return PC;
+}
+const pub = t => ({ id: t.id, exam: t.exam, num: t.num, kind: t.kind || 'short', text: t.img === false || t.fig ? (t.text || '') : '', img: t.img !== false, fig: !!t.fig, file: t.file || null, src: t.src || '' });
+const numKey = n => { const m = /^(\d+)(?:\.(\d+))?/.exec(n || ''); return m ? +m[1] * 100 + (+m[2] || 0) : 1e6; };
+async function practice(req, res, url) {
+  const ip = clientIp(req);
+  if (!allow('pr:' + ip, 15, 300)) return fail(res, 429, 'slow down');
+  const q = url.searchParams;
+  const body = req.method === 'POST' ? await readJson(req, 64 * 1024) : {};
+  const token = String(body.t || q.get('t') || '');
+  const D = practiceData();
+  // доступ: ученик по своей ссылке или репетитор после входа
+  const tutor = !!session(req);
+  if (!tutor && (!D.tokens.has(token) || D.off)) return fail(res, 403, D.off ? 'Тренажёр выключен репетитором' : 'forbidden');
+  const p = url.pathname;
+  const hide = tutor ? new Set() : hwIds(token);
+  const T = D.tasks.filter(t => !hide.has(t.id));
+  if (p === '/api/practice/catalog') {
+    const ex = {}, vars = {};
+    for (const t of T) {
+      (ex[t.exam] = ex[t.exam] || {})[t.num] = (ex[t.exam][t.num] || 0) + 1;
+      if (t.src && t.src !== 'Своя база') { const k = t.exam + '|' + t.src; vars[k] = vars[k] || { exam: t.exam, name: t.src, n: 0 }; vars[k].n++; }
+    }
+    const prog = {}; for (const r of PQ.all.all(token)) { const t = D.byId.get(r.id); if (t) prog[r.id] = [r.ok, r.last, r.tries, r.at, t.exam, t.num]; }
+    return sendJson(res, 200, { exams: ex, variants: Object.values(vars).filter(v => v.n >= 2), progress: prog });
+  }
+  if (p === '/api/practice/list') {
+    const ex = q.get('ex'), num = q.get('num');
+    return sendJson(res, 200, T.filter(t => t.exam === ex && t.num === num).sort((a, b) => String(a.id) < String(b.id) ? -1 : 1).map(pub));
+  }
+  if (p === '/api/practice/variant') {
+    const ex = q.get('ex'), name = q.get('name');
+    let list;
+    if (name) list = T.filter(t => t.exam === ex && t.src === name);
+    else {
+      const done = new Set(PQ.all.all(token).filter(r => r.ok).map(r => r.id));
+      const by = {}; for (const t of T) if (t.exam === ex) (by[t.num] = by[t.num] || []).push(t);
+      list = Object.values(by).map(a => { const fresh = a.filter(t => !done.has(t.id)); const pool = fresh.length ? fresh : a; return pool[crypto.randomInt(pool.length)]; });
+    }
+    list.sort((a, b) => numKey(a.num) - numKey(b.num) || (a.at || 0) - (b.at || 0));
+    return sendJson(res, 200, list.slice(0, 60).map(pub));
+  }
+  if (p === '/api/practice/img') {
+    const id = q.get('id') || '';
+    if (!D.byId.has(id)) return fail(res, 404, 'not found');
+    const r = Q.vGet.get('timg:' + id);
+    if (!r || !r.body) return fail(res, 404, 'not found');
+    const d = JSON.parse(r.body); const m = /^data:([\w/+.-]+);base64,(.*)$/s.exec(String(d));
+    if (!m) return fail(res, 404, 'not found');
+    const buf = Buffer.from(m[2], 'base64');
+    res.writeHead(200, { 'Content-Type': m[1], 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400', ...CORS });
+    return res.end(buf);
+  }
+  if (p === '/api/practice/check' && req.method === 'POST') {
+    const out = {};
+    const items = Array.isArray(body.items) ? body.items.slice(0, 80) : [];
+    for (const it of items) {
+      const t = D.byId.get(String(it.id || ''));
+      if (!t || hide.has(t.id)) continue;
+      const kind = t.kind || 'short';
+      const r = { ans: t.ans || '', sol: t.sol || '' };
+      if (kind === 'photo' || it.reveal) {
+        if (typeof it.self === 'boolean' && token && !tutor) PQ.put.run(token, t.id, +it.self, +it.self, Date.now());
+      } else {
+        r.ok = checkOne(kind, t.ans, String(it.answer == null ? '' : it.answer).slice(0, 300));
+        if (token && D.tokens.has(token)) PQ.put.run(token, t.id, +r.ok, +r.ok, Date.now());
+      }
+      out[t.id] = r;
+    }
+    return sendJson(res, 200, out);
+  }
+  return fail(res, 404, 'not found');
+}
+
+/* ---------------- материалы ФИПИ для репетитора ---------------- */
+// Сервер скачивает страницу или файл с сайта ФИПИ по просьбе репетитора (браузер сам не может из-за CORS).
+const FIPI_HOSTS = /^(www\.)?(fipi\.ru|doc\.fipi\.ru|oge\.fipi\.ru|ege\.fipi\.ru)$/i;
+async function fetchFipi(u, limit) {
+  let url; try { url = new URL(u); } catch (e) { throw new HttpErr(400, 'Неверная ссылка'); }
+  if (!/^https?:$/.test(url.protocol) || !FIPI_HOSTS.test(url.hostname)) throw new HttpErr(400, 'Можно только ссылки с сайта fipi.ru');
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 60000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (kabinet)' } });
+    if (!r.ok) throw new HttpErr(502, 'ФИПИ ответил ошибкой ' + r.status);
+    const fin = new URL(r.url); if (!FIPI_HOSTS.test(fin.hostname)) throw new HttpErr(400, 'Ссылка ведёт не на fipi.ru');
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > limit) throw new HttpErr(413, 'Файл слишком большой');
+    return { buf, type: r.headers.get('content-type') || '', url: r.url };
+  } catch (e) { if (e instanceof HttpErr) throw e; throw new HttpErr(502, 'Сайт ФИПИ не отвечает'); } finally { clearTimeout(tm); }
+}
+function unzipList(buf) {
+  let e = buf.length - 22; while (e >= 0 && buf.readUInt32LE(e) !== 0x06054b50) e--;
+  if (e < 0) throw new HttpErr(400, 'Архив повреждён');
+  const n = buf.readUInt16LE(e + 10); let o = buf.readUInt32LE(e + 16); const out = [];
+  const dec866 = new TextDecoder('ibm866');
+  for (let i = 0; i < n; i++) {
+    if (buf.readUInt32LE(o) !== 0x02014b50) break;
+    const flags = buf.readUInt16LE(o + 8), method = buf.readUInt16LE(o + 10), csize = buf.readUInt32LE(o + 20), size = buf.readUInt32LE(o + 24);
+    const nl = buf.readUInt16LE(o + 28), xl = buf.readUInt16LE(o + 30), cl = buf.readUInt16LE(o + 32), lo = buf.readUInt32LE(o + 42);
+    const raw = buf.subarray(o + 46, o + 46 + nl);
+    const name = flags & 0x800 ? raw.toString('utf8') : dec866.decode(raw);
+    out.push({ name, method, csize, size, lo });
+    o += 46 + nl + xl + cl;
+  }
+  return out;
+}
+function unzipGet(buf, ent) {
+  const lo = ent.lo; if (buf.readUInt32LE(lo) !== 0x04034b50) throw new HttpErr(400, 'Архив повреждён');
+  const start = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28);
+  const data = buf.subarray(start, start + ent.csize);
+  if (ent.method === 0) return Buffer.from(data);
+  if (ent.method === 8) return require('node:zlib').inflateRawSync(data);
+  throw new HttpErr(400, 'Неизвестное сжатие в архиве');
+}
+const fipiCache = new Map();
+async function fipi(req, res, url) {
+  if (!session(req)) return fail(res, 401, 'Нужно войти');
+  if (!allow('fipi', 2, 30)) return fail(res, 429, 'slow down');
+  const u = url.searchParams.get('url') || '';
+  if (url.pathname === '/api/fipi/links') {
+    const { buf, url: fin } = await fetchFipi(u, 8e6);
+    const html = buf.toString('utf8'); const links = []; const seen = new Set();
+    const re = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi; let m;
+    while ((m = re.exec(html))) {
+      let href; try { href = new URL(m[1].replace(/&amp;/g, '&'), fin).href; } catch (e) { continue; }
+      if (!/\.(zip|pdf)(\?|$)/i.test(href) || seen.has(href)) continue; seen.add(href);
+      const text = m[2].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+      links.push({ url: href, text: text || decodeURIComponent(href.split('/').pop()) });
+    }
+    return sendJson(res, 200, { links });
+  }
+  if (url.pathname === '/api/fipi/file') {
+    let got = fipiCache.get(u);
+    if (!got) { got = await fetchFipi(u, 120e6); fipiCache.set(u, got); if (fipiCache.size > 6) fipiCache.delete(fipiCache.keys().next().value); }
+    const isZip = got.buf.readUInt32LE(0) === 0x04034b50;
+    if (!isZip) { res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': got.buf.length, ...CORS }); return res.end(got.buf); }
+    const list = unzipList(got.buf);
+    const entry = url.searchParams.get('entry');
+    if (entry == null) return sendJson(res, 200, { zip: true, files: list.filter(f => /\.pdf$/i.test(f.name)).map(f => ({ name: f.name, size: f.size })) });
+    const ent = list.find(f => f.name === entry); if (!ent) return fail(res, 404, 'Нет такого файла в архиве');
+    const out = unzipGet(got.buf, ent);
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': out.length, ...CORS }); return res.end(out);
+  }
+  return fail(res, 404, 'not found');
+}
 
 /* ---------------- вход репетитора и его данные ---------------- */
 const SESSION_DAYS = 120;
@@ -283,8 +467,8 @@ async function api(req, res, url) {
     Q.sAdd.run(sha(id), exp, ip, String(req.headers['user-agent'] || '').slice(0, 200), Date.now());
     return sendJson(res, 200, { token: id, exp });
   }
-  if (!allow('api:' + ip, 40, 400)) return fail(res, 429, 'slow down');
   const sid = session(req);
+  if (!allow(sid ? 'apit' : 'api:' + ip, sid ? 300 : 20, sid ? 3000 : 100)) return fail(res, 429, 'slow down');
   if (!sid) return fail(res, 401, 'Нужно войти');
   if (p === '/api/logout' && req.method === 'POST') { Q.sDel.run(sha(sid)); return sendJson(res, 200, { ok: true }); }
   if (p === '/api/vault' && req.method === 'GET') {
@@ -418,6 +602,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, RPC[fn](a));
     }
     if (p === '/functions/v1/turn') return await turn(req, res);
+    if (p.startsWith('/api/practice/')) return await practice(req, res, url);
+    if (p.startsWith('/api/fipi/')) return await fipi(req, res, url);
     if (p.startsWith('/api/')) return await api(req, res, url);
     if (req.method === 'GET' || req.method === 'HEAD') return await site(req, res, url);
     return fail(res, 405, 'method not allowed');

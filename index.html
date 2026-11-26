@@ -303,6 +303,34 @@ label input,label textarea{margin-top:6px;font-weight:400;font-size:15px}
 .vstat::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
 .vstat.bad{color:var(--red)}
 @media(max-width:640px){.nav .nl{display:none}.nav .btn,.nav>button,.nav>label{padding-left:11px;padding-right:11px}}
+/* тренажёр */
+.extabs a{display:inline-flex;align-items:center;height:40px;padding:0 16px;border-radius:99px;background:var(--sf);box-shadow:var(--sh);color:var(--ink);text-decoration:none;font-weight:600;font-size:14px}
+.extabs a.act{background:var(--ink);color:#fff}
+.prhead{display:flex;align-items:center;gap:20px;background:var(--sf);border-radius:22px;padding:18px 22px;box-shadow:var(--sh);margin-bottom:18px}
+.ring{--p:0;flex:none;width:86px;height:86px;border-radius:50%;display:grid;place-content:center;text-align:center;background:radial-gradient(closest-side,var(--sf) 79%,transparent 80% 100%),conic-gradient(var(--mint-b) calc(var(--p)*1%),var(--line) 0)}
+.ring b{font:800 24px/1 var(--fd)}.ring small{font-size:11px;color:var(--mut)}
+.prgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.prnum{display:flex;flex-direction:column;gap:4px;padding:16px;border-radius:18px;background:var(--sf);box-shadow:var(--sh);color:var(--ink);text-decoration:none;transition:transform .15s var(--ease),box-shadow .15s}
+.prnum:hover{transform:translateY(-2px);box-shadow:var(--shf)}
+.prnum b{font:800 18px/1.1 var(--fd)}.prnum span{font-size:13px;color:var(--ink2);min-height:2.6em}.prnum small{font-size:12px;color:var(--mut)}
+.bar{height:6px;border-radius:9px;background:var(--line);overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--mint-b);border-radius:9px}
+.vlist{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.vitem{display:flex;flex-direction:column;padding:10px 14px;border-radius:14px;background:var(--vio-l);color:var(--ink);text-decoration:none}
+.vitem small{color:var(--ink2);font-size:12px}
+.prnav{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
+.prfb p{margin:10px 0 0}.prfb details{margin-top:8px}
+pre.sol{background:var(--sf2);border-radius:12px;padding:12px;overflow:auto;font:13px/1.5 var(--fm);white-space:pre-wrap}
+.prlink{display:flex;align-items:center;gap:16px;justify-content:space-between;grid-column:1/-1}
+.prmini{display:flex;flex-wrap:wrap;gap:6px}
+.prmini span{--p:0;display:flex;flex-direction:column;align-items:center;min-width:46px;padding:6px 8px;border-radius:10px;font-size:11px;color:var(--ink2);background:linear-gradient(to top,var(--mint-l) calc(var(--p)*1%),var(--sf2) 0)}
+.prmini b{font-size:13px;color:var(--ink)}
+.timg.fig{display:flex;flex-direction:column;gap:6px}.timg.fig p{margin:0}
+.flist{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-top:10px}
+.fitem{display:flex;align-items:center;gap:12px;text-align:left;justify-content:flex-start;height:auto;padding:10px 12px}
+.fitem span{display:flex;flex-direction:column}.fitem small{color:var(--mut);font-size:12px;word-break:break-all}
+.fitem.busy{opacity:.5;pointer-events:none}
+@media(max-width:640px){.prhead{flex-wrap:wrap}.prhead .btn{width:100%;justify-content:center}.prlink{flex-direction:column;align-items:stretch}}
+.tcard .timg>p:first-child{padding-top:22px}
 </style>
 </head>
 <body>
@@ -729,7 +757,7 @@ const Vault={on:!!window.KABINET_SERVER,tok:'',meta:{},dirty:new Set(),gen:{},t:
  key(k){return /^(state|bank|board:[\w-]+|timg:[\w-]+)$/.test(k)},
  merged(k){return k==='state'||k==='bank'},
  saveMeta(){try{localStorage.setItem('kab-vmeta2',JSON.stringify(this.meta));localStorage.setItem('kab-vdirty',JSON.stringify([...this.dirty]));localStorage.setItem('kab-vlast',String(this.last))}catch(e){}},
- mark(k){if(!this.on||!this.key(k))return;this.gen[k]=(this.gen[k]||0)+1;this.dirty.add(k);this.saveMeta();this.later(2000)},
+ mark(k){if(!this.on||!this.key(k))return;this.gen[k]=(this.gen[k]||0)+1;this.dirty.add(k);if(this.bulk)return;this.saveMeta();this.later(2000)},
  later(ms){clearTimeout(this.t);this.t=setTimeout(()=>{this.t=0;this.flush()},ms)},
  async req(method,url,body,ms){const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),ms||60000);
   try{const r=await fetch(location.origin+url,{method,signal:ctl.signal,headers:{Authorization:'Bearer '+this.tok,'Content-Type':'application/json'},body});
@@ -846,6 +874,7 @@ async function route(){
  if(h[0]==='lesson'&&h[1])return viewLesson(h[1]);
  if(h[0]==='view'&&h[1]&&h[2])return viewView(h[1],h[2]);
  if(h[0]==='hw'&&h[1]&&h[2])return viewHw(h[1],h[2]);
+ if(h[0]==='practice'&&h[1])return viewPractice(h[1],h[2],h[3],h[4]!=null?decodeURIComponent(h[4]):undefined);
  if(Vault.on&&!Vault.tok)return viewLogin();
  if(!Vault.on&&!Lock.check())return viewLock();
  if(h[0]==='settings')return viewSettings();
@@ -917,6 +946,7 @@ function viewStudent(s){
   ${Cloud.on?`<ul class="list">${(s.asgs||[]).map(a=>`<li><a class="grow" href="javascript:void 0" data-a="asgopen" data-id="${a.id}"><b>${esc(a.title)}</b><br><small class="hint">${a.n} ${plural(a.n,'задание','задания','заданий')} · ${fmtDate(a.at)}</small></a><span data-asg="${a.id}"></span><button class="mini" data-a="asgopen" data-id="${a.id}">Ответы</button></li>`).join('')||'<li class="empty">Заданий пока нет. Выберите задачи из базы — ученик решит их в своём кабинете, ответы проверятся сами.</li>'}</ul>`
    :'<p class="hint">Чтобы ученик решал задания у себя и ответы проверялись сами, подключите облако Supabase (см. инструкцию).</p>'}
  </section>
+ ${Vault.on?'<section class="panel rise" id="prpanel"><h3>Тренажёр</h3><p class="hint"><span class="spin"></span></p></section>':''}
  <section class="panel rise"><h3>Занятия</h3>
   <div class="form"><input type="date" id="ld" value="${today()}" aria-label="Дата"><input type="time" id="lt" value="${esc(lastTime)}" aria-label="Время"><span>недель подряд</span><input type="number" id="lw" min="1" max="30" value="1" aria-label="Недель подряд"><button class="pri" data-a="lsadd">Добавить</button></div>
   <ul class="list">${ls.map(l=>lessonRow(s,l,false)).join('')||'<li class="empty">Занятий пока нет.</li>'}</ul>
@@ -928,6 +958,7 @@ function viewStudent(s){
   <ul class="list">${s.payments.slice().sort((a,b)=>a.date<b.date?1:-1).map(p=>`<li><span class="when"><b>${esc(dayLabel(p.date))}</b></span>${+p.count} ${plural(+p.count,'занятие','занятия','занятий')}${p.sum?', '+esc(p.sum):''}<span class="grow"></span><button class="mini icb" data-a="paydel" data-id="${p.id}" title="Удалить оплату" aria-label="Удалить оплату">${ic('x')}</button></li>`).join('')||'<li class="empty">Оплат пока нет.</li>'}</ul>
  </section></div></div></main>`;
  asgStatus(s);
+ if(Vault.on)prTutorPanel(s);
 }
 function viewSettings(){
  document.title='Настройки';const p=S.settings.pass;
@@ -940,6 +971,7 @@ function viewSettings(){
  ${Vault.on?`<section class="panel rise"><h3>Ваш сервер</h3>
   <p class="hint">Ученики, доски, база заданий и оплаты хранятся на сервере. Войдите с паролем на любом устройстве, и всё будет там. Каждый день сервер делает копию базы.</p>
   <p class="vstat" id="vstat"></p>
+  <label class="chkl"><input type="checkbox" data-a="prtoggle"${S.settings.practiceOff?'':' checked'}> Тренажёр открыт ученикам (задания из базы, ответы проверяет сервер)</label>
   <div class="form"><button data-a="vsync">Синхронизировать</button><button data-a="vout">Выйти</button><button class="danger" data-a="voutwipe">Выйти и стереть с устройства</button></div>
   <p class="hint">Пароль меняется на сервере командой <code>kabinet passwd</code>. После смены все устройства попросят войти заново.</p></section>`:`<section class="panel rise"><h3>Пароль на кабинет</h3>
   <p class="hint">${p?'Пароль установлен. Его спросят при каждом новом открытии кабинета.':'Пароля нет. Кабинет открывается сразу.'} Ссылки учеников работают без пароля.</p>
@@ -997,6 +1029,7 @@ async function viewJoin(token){
   <h3 style="margin-top:24px">Ближайшие занятия</h3><ul class="list" style="margin-top:6px">${ls.map(t=>`<li>${esc(when(t))}</li>`).join('')||'<li class="empty">Пока не запланированы.</li>'}</ul>
   <p class="hint" style="margin-bottom:0">Время показано по вашим часам.</p>
   <h3 style="margin-top:24px">Задания на проверку</h3><ul class="list" style="margin-top:6px">${(Array.isArray(info.asgs)?info.asgs:[]).map(a=>`<li><a class="grow" href="#/hw/${esc(token)}/${esc(a.id)}"><b>${esc(a.title)}</b><br><small class="hint">${esc(a.n)} ${plural(+a.n||0,'задание','задания','заданий')}</small></a><a class="btn mini" href="#/hw/${esc(token)}/${esc(a.id)}">Решать</a></li>`).join('')||'<li class="empty">Пока нет.</li>'}</ul></section>
+ ${window.KABINET_SERVER?`<section class="panel rise prlink"><div><h3>Тренажёр</h3><p class="hint" style="margin:6px 0 0">Задания ОГЭ и ЕГЭ по номерам, свои варианты, варианты прошлых лет и прогресс.</p></div><a class="btn pri" href="#/practice/${esc(token)}">${ic('play',1)}Открыть</a></section>`:''}
  <section class="panel rise"><h3>Доски с уроков</h3><ul class="list boards" style="margin-top:6px">${bs.map(b=>`<li><a href="#/view/${esc(token)}/${esc(b.id)}"><b>${esc(b.title)}</b><small>${fmtDate(b.updated)}</small></a></li>`).join('')||'<li class="empty">Досок пока нет.</li>'}</ul></section></div></main>`;
  $('#jb').onclick=()=>{try{localStorage.setItem('kab-name',String(info.name||'Ученик'))}catch(e){}location.hash='#/lesson/'+token};
 }
@@ -1105,7 +1138,7 @@ const B={board:null,cur:0,tool:'pen',color:'#17141F',size:3,imgs:new Map(),undo:
  bbox(items){let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const add=(a,b,m)=>{x0=Math.min(x0,a-m);y0=Math.min(y0,b-m);x1=Math.max(x1,a+m);y1=Math.max(y1,b+m)};
   for(const it of items){if(it.t==='s')for(let i=0;i<it.pts.length;i+=2)add(it.pts[i],it.pts[i+1],it.w/2);
    else if(it.t==='i'){add(it.x,it.y,0);add(it.x+it.w,it.y+it.h,0)}
-   else if(it.t==='t'){add(it.x,it.y,0);add(it.x+it.txt.length*it.s*.6,it.y+it.s*1.2,0)}
+   else if(it.t==='t'){const ls=it.txt.split('\n');add(it.x,it.y,0);add(it.x+Math.max(...ls.map(l=>l.length))*it.s*.6,it.y+ls.length*it.s*1.3,0)}
    else if(it.t==='g'){if(it.k==='circ'){const r=Math.hypot(it.x1-it.x0,it.y1-it.y0);add(it.x0,it.y0,r+it.w)}else{add(it.x0,it.y0,it.w*3);add(it.x1,it.y1,it.w*3)}}}
   return x0===Infinity?null:{x:x0,y:y0,w:Math.max(1,x1-x0),h:Math.max(1,y1-y0)}},
  area(){const mob=window.innerWidth<=900;const vc=!this.ro&&$('#vcard')&&!$('#room').classList.contains('vmin')&&!mob;return{l:12,t:mob?110:64,r:vc?290:12,b:78}},
@@ -1165,7 +1198,7 @@ const B={board:null,cur:0,tool:'pen',color:'#17141F',size:3,imgs:new Map(),undo:
   else if(it.k==='circ')k.arc(it.x0,it.y0,Math.hypot(it.x1-it.x0,it.y1-it.y0),0,Math.PI*2);
   else{const a=Math.atan2(it.y1-it.y0,it.x1-it.x0),L=Math.max(14,it.w*4.5);k.moveTo(it.x0,it.y0);k.lineTo(it.x1,it.y1);k.stroke();k.beginPath();k.moveTo(it.x1,it.y1);k.lineTo(it.x1-L*Math.cos(a-.4),it.y1-L*Math.sin(a-.4));k.lineTo(it.x1-L*Math.cos(a+.4),it.y1-L*Math.sin(a+.4));k.closePath();k.fill()}
   k.stroke();k.restore()},
- text(k,it){k.save();k.fillStyle=it.c;k.font=it.s+'px Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';k.textBaseline='top';k.fillText(it.txt,it.x,it.y);k.restore()},
+ text(k,it){k.save();k.fillStyle=it.c;k.font=it.s+'px Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';k.textBaseline='top';const ls=it.txt.split('\n');for(let i=0;i<ls.length;i++)k.fillText(ls[i],it.x,it.y+i*it.s*1.3);k.restore()},
  spos(e){const r=$('#cO').getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]},
  pos(e){const[sx,sy]=this.spos(e),v=this.v;return[Math.round((v.x+sx/v.z)*10)/10,Math.round((v.y+sy/v.z)*10)/10]},
  setView(nv){this.views[this.cur]=nv;this.schedule();this.hideText()},
@@ -1224,7 +1257,7 @@ const B={board:null,cur:0,tool:'pen',color:'#17141F',size:3,imgs:new Map(),undo:
    if(it.t==='g'){const lim=R+it.w/2;for(const[qx,qy]of P){if(it.k==='circ'){if(Math.abs(Math.hypot(qx-it.x0,qy-it.y0)-Math.hypot(it.x1-it.x0,it.y1-it.y0))<=lim)return true}
      else if(it.k==='arrow'){if(dseg(qx,qy,it.x0,it.y0,it.x1,it.y1)<=lim)return true}
      else{const a=Math.min(it.x0,it.x1),b=Math.max(it.x0,it.x1),c=Math.min(it.y0,it.y1),d=Math.max(it.y0,it.y1);if(dseg(qx,qy,a,c,b,c)<=lim||dseg(qx,qy,b,c,b,d)<=lim||dseg(qx,qy,b,d,a,d)<=lim||dseg(qx,qy,a,d,a,c)<=lim)return true}}return false}
-   if(it.t==='t'){const w=it.txt.length*it.s*.55,h=it.s*1.2;for(const[qx,qy]of P)if(qx>=it.x-R&&qx<=it.x+w+R&&qy>=it.y-R&&qy<=it.y+h+R)return true}
+   if(it.t==='t'){const ls=it.txt.split('\n'),w=Math.max(...ls.map(l=>l.length))*it.s*.55,h=ls.length*it.s*1.3;for(const[qx,qy]of P)if(qx>=it.x-R&&qx<=it.x+w+R&&qy>=it.y-R&&qy<=it.y+h+R)return true}
    return false};
   for(const it of pg.items)if(it.t!=='i'&&near(it))hits.push(it);
   for(const it of hits){this.ers.removed.push(JSON.parse(JSON.stringify(it)));this.doOp({op:'del',p:this.cur,id:it.id})}},
@@ -1579,6 +1612,7 @@ const A={
  async cloudall(el){el.disabled=true;let ok=0,bad=0;for(const s of S.students){(await Cloud.pushInfo(s))?ok++:bad++;for(const b of s.boards){const d=await DB.get('board:'+b.id);if(d)(await Cloud.pushBoard(s,b,d))?ok++:bad++}}el.disabled=false;toast(bad?'Отправлено: '+ok+', с ошибкой: '+bad:'Всё отправлено в облако ('+ok+')')},
  async vsync(el){el.disabled=true;await Vault.flush();const ch=await Vault.pull();el.disabled=false;Vault.ui();if(ch===null)toast('Сервер не отвечает');else{toast('Готово');if(await Vault.apply(ch))return}},
  vout(){Vault.logout(false)},
+ prtoggle(el){S.settings.practiceOff=!el.checked;saveS();toast(el.checked?'Тренажёр открыт ученикам':'Тренажёр закрыт')},
  async voutwipe(){if(await sure('Выйти и стереть данные с этого устройства?','На сервере всё останется. Подходит для чужого или общего компьютера.','Выйти и стереть',true))Vault.logout(true)},
  async export(){const boards={};for(const s of S.students)for(const b of s.boards)boards[b.id]=(await DB.get('board:'+b.id))||emptyBoard();
   const bank=(await DB.get('bank'))||[],timg={};for(const t of bank)if(t&&t.id){const im=await DB.get('timg:'+t.id);if(im)timg[t.id]=im}
@@ -1639,7 +1673,7 @@ document.addEventListener('keyup',e=>{if(e.key===' '&&B.space){B.space=false;con
 window.addEventListener('pagehide',()=>{if(Room.on){B.flushSave();Net.stop()}if(saveT)saveNow()});
 
 (async()=>{await DB.open();Vault.init();const st=await DB.get('state');if(st&&Array.isArray(st.students))S=st;norm(S);
- const own=/^#\/?(join|lesson|view|hw)\//.test(location.hash);
+ const own=/^#\/?(join|lesson|view|hw|practice)\//.test(location.hash);
  if(Vault.on&&Vault.tok&&!own){const p=Vault.pull();const ch=await Promise.race([p,new Promise(r=>setTimeout(()=>r('late'),5000))]);
   if(ch==='late')p.then(c=>Vault.apply(c));else if(ch&&ch.has('state')){const s2=await DB.get('state');if(s2&&Array.isArray(s2.students))S=norm(s2)}}
  route()})();
@@ -1697,21 +1731,21 @@ async function viewBank(){await Bank.load();document.title='База задан�
  const nums=E.nums.map(([n,t])=>{const c=all.filter(x=>x.num===n).length;return `<button class="nrow${BV.num===n?' act':''}" data-a="bnum" data-v="${esc(n)}"><b>${esc(E.topic?'':n)}</b><span>${esc(t)}</span><i>${c||''}</i></button>`}).join('');
  const extra=[...new Set(all.map(t=>t.num))].filter(n=>!E.nums.some(x=>x[0]===n));
  app.innerHTML=navHTML(`<a class="btn ghost" href="#/">${ic('back')}Кабинет</a>`)+`<main class="wrap"><div class="shead rise"><div><h1>База заданий</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Всего заданий: ${Bank.meta.length}. Загружайте PDF вариантов, сайт сам разрежет их на задания.</p></div>
-  <div class="acts"><button data-a="bnew">${ic('plus')}Задание</button><label class="btn pri" style="margin:0">${ic('upl')}Загрузить PDF<input type="file" id="bimp" accept="application/pdf,image/*" multiple hidden></label></div></div>
+  <div class="acts">${Vault.on?`<button data-a="bfipi">${ic('down')}<span class="nl">С сайта ФИПИ</span></button>`:''}<label class="btn" style="margin:0" title="Готовый набор заданий (.json)">${ic('upl')}<span class="nl">Набор</span><input type="file" id="bpack" accept=".json,application/json" multiple hidden></label><button data-a="bnew">${ic('plus')}Задание</button><label class="btn pri" style="margin:0">${ic('upl')}Загрузить PDF<input type="file" id="bimp" accept="application/pdf,image/*" multiple hidden></label></div></div>
  <div class="extabs rise">${Object.entries(EXAMS).map(([k,v])=>`<button data-a="bex" data-v="${k}" class="${k===ex?'act':''}">${esc(v.t)}<i>${Bank.count(k)||''}</i></button>`).join('')}</div>
  <div class="bankg rise"><aside class="panel nlist"><button class="nrow${BV.num==null?' act':''}" data-a="bnum" data-v=""><b></b><span>Все номера</span><i>${all.length||''}</i></button>${nums}${extra.map(n=>`<button class="nrow${BV.num===n?' act':''}" data-a="bnum" data-v="${esc(n)}"><b>${esc(n)}</b><span>вне каталога</span><i>${all.filter(x=>x.num===n).length}</i></button>`).join('')}
   ${E.bank?`<p class="hint" style="margin:14px 4px 0">Официальные материалы: <a class="who" href="${E.bank}" target="_blank" rel="noopener">открытый банк</a>, <a class="who" href="${E.demo}" target="_blank" rel="noopener">демоверсии</a>.</p>`:''}</aside>
  <section><div class="btool"><input id="bq" placeholder="Поиск по тексту, источнику или ответу" value="${esc(BV.q)}" aria-label="Поиск"><span class="grow"></span>
-  ${BV.sel.size?`<span class="chip">выбрано: ${BV.sel.size}</span><button class="mini" data-a="bassign">${ic('play',1)}Назначить ученику</button><button class="mini" data-a="bselnone">Снять</button><button class="mini danger" data-a="bdelsel">${ic('trash')}Удалить</button>`:(list.length?'<button class="mini" data-a="bselall">Выбрать все</button>':'')}</div>
+  ${BV.sel.size?`<span class="chip">выбрано: ${BV.sel.size}</span><button class="mini" data-a="bassign">${ic('play',1)}Назначить ученику</button><button class="mini" data-a="bselnone">Снять</button>${Vault.on?'<button class="mini" data-a="bhide">Скрыть от учеников</button><button class="mini" data-a="bunhide">Показать ученикам</button>':''}<button class="mini danger" data-a="bdelsel">${ic('trash')}Удалить</button>`:(list.length?'<button class="mini" data-a="bselall">Выбрать все</button>':'')}</div>
   ${list.length?`<div class="tgrid">${list.slice(0,BV.lim).map(taskCard).join('')}</div>${list.length>BV.lim?`<div style="text-align:center;margin-top:16px"><button data-a="bmore">Показать ещё (${list.length-BV.lim})</button></div>`:''}`
    :`<div class="panel empty" style="text-align:center;padding:40px">Здесь пока пусто. Загрузите PDF варианта: сайт найдёт задания по номерам и ответы, если они есть в файле.</div>`}
  </section></div></main>`;
- lazyImgs(app);$('#bimp').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)Imp.open(f,BV.ex)};
+ lazyImgs(app);$('#bpack').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)packImport(f)};$('#bimp').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)Imp.open(f,BV.ex)};
  const q=$('#bq');q.oninput=()=>{clearTimeout(BV.qt);BV.qt=setTimeout(()=>{BV.q=q.value.trim();BV.lim=60;viewBank().then(()=>{const n=$('#bq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})},300)}}
 function numSort(a,b){const x=parseFloat(a),y=parseFloat(b);if(isFinite(x)&&isFinite(y))return x-y;return String(a).localeCompare(String(b))}
 function taskCard(t){const on=BV.sel.has(t.id);return `<article class="tcard${on?' on':''}" data-id="${t.id}"><label class="tchk" title="Выбрать"><input type="checkbox" data-a="bsel" data-id="${t.id}"${on?' checked':''}></label>
- <div class="timg" data-a="bview" data-id="${t.id}">${t.img===false?`<p>${esc((t.text||'').slice(0,300))}</p>`:`<img data-tid="${t.id}" alt="Задание ${esc(t.num)}">`}</div>
- <div class="tmeta"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':t.ans?`<span class="ans" title="Ответ">${esc(t.ans)}</span>`:'<span class="chip neg">нет ответа</span>'}<span class="grow"></span>
+ <div class="timg${t.fig?' fig':''}" data-a="bview" data-id="${t.id}">${t.img===false||t.fig?`<p>${esc((t.text||'').slice(0,t.fig?220:300))}</p>`:''}${t.img===false?'':`<img data-tid="${t.id}" alt="Задание ${esc(t.num)}">`}</div>
+ <div class="tmeta"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':t.ans?`<span class="ans" title="Ответ">${esc(t.ans)}</span>`:'<span class="chip neg">нет ответа</span>'}${t.file?'<span class="chip" title="К заданию прилагается файл">файл</span>':''}${t.hide?'<span class="chip neg" title="Скрыто из тренажёра">скрыто</span>':''}<span class="grow"></span>
  <button class="mini icb" data-a="bedit" data-id="${t.id}" title="Изменить" aria-label="Изменить">${ic('pen')}</button></div>${t.src?`<small>${esc(t.src)}</small>`:''}</article>`}
 
 /* ---------- импорт: PDF и картинки ---------- */
@@ -1776,17 +1810,20 @@ const Imp={
 
 /* ---------- карточка задания: просмотр и правка ---------- */
 async function editTask(t){const img=await taskImg(t.id),E=EXAMS[t.exam];const w=document.createElement('div');w.className='modal';
- w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2>${img?`<img class="tbig" src="${img}" alt="">`:''}
+ w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2>${t.fig||t.img===false?`<p class="ttext">${esc(t.text||'')}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
+  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}${t.sol?`<details><summary>Решение</summary><pre class="sol">${esc(t.sol)}</pre></details>`:''}
   <div class="form"><span>Экзамен</span><select data-k="exam">${Object.entries(EXAMS).map(([k,v])=>`<option value="${k}"${k===t.exam?' selected':''}>${esc(v.t)}</option>`).join('')}</select>
   <span>Номер</span><input data-k="num" value="${esc(t.num)}" style="max-width:90px"><span>Ответ</span><input data-k="ans" value="${esc(t.ans)}" placeholder="несколько вариантов — через |">
   <select data-k="kind">${Object.entries(KIND_T).map(([k,v])=>`<option value="${k}"${k===t.kind?' selected':''}>${v}</option>`).join('')}</select></div>
-  <label>Источник<input data-k="src" value="${esc(t.src||'')}"></label><label>Текст для поиска<textarea data-k="text">${esc(t.text||'')}</textarea></label>
+  <label>Источник (название варианта для тренажёра)<input data-k="src" value="${esc(t.src||'')}"></label><label>${t.fig||t.img===false?'Текст задания':'Текст для поиска'}<textarea data-k="text">${esc(t.text||'')}</textarea></label>
+  ${Vault.on?`<label class="chkl"><input type="checkbox" data-k="hide"${t.hide?' checked':''}> Скрыть из тренажёра учеников</label>`:''}
   <div class="mact"><button class="danger" data-m="del">${ic('trash')}Удалить</button><span class="grow"></span><button data-m="no">Закрыть</button><button class="pri" data-m="ok">Сохранить</button></div></div>`;
  document.body.appendChild(w);const close=()=>w.remove();
  w.addEventListener('click',async e=>{const b=e.target.closest('[data-m]');if(e.target===w)return close();if(!b)return;
   if(b.dataset.m==='no')return close();
+  if(b.dataset.m==='file'){TaskFiles.download(t.file);return}
   if(b.dataset.m==='del'){if(!await sure('Удалить задание?','','Удалить',true))return;await Bank.del([t.id]);BV.sel.delete(t.id);close();viewBank();return}
-  if(b.dataset.m==='ok'){for(const k of['exam','num','ans','kind','src','text'])t[k]=$(`[data-k=${k}]`,w).value.trim();await Bank.save();close();toast('Сохранено');if(location.hash==='#/bank')viewBank()}})}
+  if(b.dataset.m==='ok'){for(const k of['exam','num','ans','kind','src','text'])t[k]=$(`[data-k=${k}]`,w).value.trim();const hb=$('[data-k=hide]',w);if(hb){if(hb.checked)t.hide=true;else delete t.hide}await Bank.save();close();toast('Сохранено');if(location.hash==='#/bank')viewBank()}})}
 async function newTask(){const w=document.createElement('div');w.className='modal';
  w.innerHTML=`<div class="mbox wide"><h2>Новое задание</h2><p>Вставьте скриншот (Ctrl+V), выберите картинку или впишите текст.</p><div class="drop" id="ntd">Ctrl+V или <label class="who" style="cursor:pointer">выбрать файл<input type="file" accept="image/*" hidden id="ntf"></label></div>
   <label>Текст задания<textarea id="ntt" placeholder="Можно без картинки"></textarea></label>
@@ -1821,7 +1858,7 @@ async function assignTo(s,ids){if(!Cloud.on)return toast('Для домашни�
  const title=$('#asgt',w).value.trim()||'ДЗ',show=$('#asgs',w).checked;w.remove();if(!ok)return;
  toast('Отправляем задание…',60000);const id=uid(),k=Cloud.wkey();
  try{for(const t of tasks){const img=t.img===false?null:await taskImg(t.id);if(img)await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'timg:'+t.id,p_data:img})}
-  await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'asg:'+id,p_data:{id,title,at:Date.now(),show,tasks:tasks.map(t=>({id:t.id,exam:t.exam,num:t.num,kind:t.kind,text:t.img===false?t.text:'',img:t.img!==false}))}});
+  await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'asg:'+id,p_data:{id,title,at:Date.now(),show,tasks:tasks.map(t=>({id:t.id,exam:t.exam,num:t.num,kind:t.kind,text:t.img===false||t.fig?t.text:'',img:t.img!==false,...(t.file?{file:t.file}:{})}))}});
   await Cloud.rpc('kab_put',{p_token:s.token,p_key:k,p_item:'key:'+id,p_data:{show,ans:Object.fromEntries(tasks.map(t=>[t.id,t.ans||''])),kind:Object.fromEntries(tasks.map(t=>[t.id,t.kind]))}});
   s.asgs=s.asgs||[];s.asgs.unshift({id,title,at:Date.now(),n:tasks.length});touch(s);await Cloud.pushInfo(s);toast('Задание отправлено ученику');BV.sel.clear();if(curS===s)viewStudent(s)}
  catch(e){console.warn(e);toast('Не получилось отправить: проверьте облако в настройках',5000)}}
@@ -1833,7 +1870,7 @@ async function asgResults(s,a){const k=Cloud.wkey(),w=document.createElement('di
   const r=sub&&sub.res?sub.res[t.id]:undefined,given=sub&&sub.answers?sub.answers[t.id]:'';
   return `<div class="rrow"><div class="rhead"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':r===true?'<span class="chip ok">верно</span>':r===false?'<span class="chip neg">неверно</span>':'<span class="chip">не сдано</span>'}
    ${t.kind!=='photo'?`<span>ответ ученика: <b>${esc(given||'—')}</b>, правильный: <b>${esc(key&&key.ans[t.id]||'—')}</b></span>`:`<span class="grow"></span><span>баллы</span><input type="number" min="0" max="10" data-pt="${t.id}" value="${esc(gr.pts[t.id]??'')}" style="width:70px">`}</div>
-   ${img?`<img class="tbig" src="${img}" alt="">`:t.text?`<p>${esc(t.text)}</p>`:''}
+   ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
    ${ph.length?`<div class="phs">${ph.map(p=>`<a href="${p}" target="_blank" rel="noopener"><img src="${p}" alt="Фото решения"></a>`).join('')}</div>`:''}
    ${t.kind==='photo'?`<input data-cm="${t.id}" placeholder="комментарий ученику" value="${esc(gr.com[t.id]||'')}">`:''}</div>`}));
  w.innerHTML=`<div class="mbox wide tall"><h2>${esc(a.title)}</h2><p>${sub?`Сдано ${new Date(sub.at).toLocaleString('ru-RU')}, попыток: ${sub.tries}. Автопроверка: <b>${sub.score} из ${sub.total}</b>.`:'Ученик ещё не сдавал это задание.'}</p>${rows.join('')}
@@ -1853,13 +1890,14 @@ async function viewHw(token,aid){const my=rid;document.title='Домашнее �
  app.innerHTML=navHTML(`<a class="btn ghost" href="#/join/${esc(token)}">${ic('back')}Кабинет</a>`)+`<main class="wrap hw"><div class="shead rise"><div><h1>${esc(a.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Заданий: ${a.tasks.length}${sub?` · сдано, автопроверка: <b>${sub.score} из ${sub.total}</b>`:''}</p></div></div>
   ${a.tasks.map((t,i)=>{const r=res[t.id];return `<section class="panel hwt rise" data-id="${t.id}"><div class="rhead"><b>${i+1}.</b><span class="chip">${esc(numLabel(t.exam,t.num))}</span>
    ${t.kind==='photo'?(gr.pts[t.id]!=null?`<span class="chip ok">оценка: ${esc(gr.pts[t.id])}</span>`:sub?'<span class="chip">на проверке</span>':''):r===true?'<span class="chip ok">верно</span>':r===false?'<span class="chip neg">неверно</span>':''}</div>
-   ${t.img?`<img class="tbig" data-timg="${t.id}" alt="Условие задания">`:''}${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}
+   ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${t.img?`<img class="tbig" data-timg="${t.id}" alt="Условие задания">`:''}${t.file?`<p><button class="mini" data-hwfile="${t.id}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
    ${t.kind==='photo'?`<div class="phs" id="ph-${t.id}"></div><label class="btn">${ic('cam')}Добавить фото решения<input type="file" accept="image/*" multiple hidden data-ph="${t.id}"></label>${gr.com[t.id]?`<p class="hwbig">${esc(gr.com[t.id])}</p>`:''}`
     :`<div class="form"><input data-ans="${t.id}" value="${esc(draft[t.id]??prev[t.id]??'')}" placeholder="Ваш ответ" autocomplete="off">${right[t.id]&&r===false?`<span>правильный ответ: <b>${esc(right[t.id])}</b></span>`:''}</div>`}</section>`}).join('')}
   <div class="rise" style="display:flex;gap:10px;align-items:center;margin-top:20px"><button class="pri" id="hwsend" style="height:48px;padding:0 24px">${ic('play',1)}${sub?'Отправить ещё раз':'Отправить ответы'}</button><span class="hint" style="margin:0">Ответы проверяются автоматически, решения на фото проверит репетитор.</span></div></main>`;
  for(const el of $$('[data-timg]'))Cloud.rpc('kab_get',{p_token:token,p_item:'timg:'+el.dataset.timg}).then(d=>{if(d)el.src=d}).catch(()=>{});
  const phs={};const drawPh=id=>{const box=$('#ph-'+id);if(box)box.innerHTML=(phs[id]||[]).map(p=>`<img src="${p}" alt="Фото решения">`).join('')};
  for(const t of a.tasks)if(t.kind==='photo'){phs[t.id]=[];Promise.all([0,1,2,3].map(i=>Cloud.rpc('kab_get',{p_token:token,p_item:`ph:${aid}:${t.id}:${i}`}).catch(()=>null))).then(l=>{phs[t.id]=l.filter(Boolean);drawPh(t.id)})}
+ for(const b of $$('[data-hwfile]'))b.onclick=()=>{const t=a.tasks.find(x=>x.id===b.dataset.hwfile);if(t&&t.file)TaskFiles.download(t.file)};
  for(const i of $$('[data-ans]'))i.oninput=()=>{draft[i.dataset.ans]=i.value;saveDraft()};
  for(const f of $$('[data-ph]'))f.onchange=async e=>{const id=f.dataset.ph,files=[...e.target.files].slice(0,4);e.target.value='';toast('Загружаем фото…',30000);
   try{const list=[];for(const file of files){const d=await shrinkPhoto(file);if(d)list.push(d)}const all=[...phs[id],...list].slice(-4);for(let i=0;i<all.length;i++)await Cloud.rpc('kab_photo',{p_token:token,p_item:`ph:${aid}:${id}:${i}`,p_data:all[i]});phs[id]=all;drawPh(id);toast('Фото загружено')}
@@ -1870,6 +1908,7 @@ async function viewHw(token,aid){const my=rid;document.title='Домашнее �
 function shrinkPhoto(file){return new Promise(res=>{const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const sc=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);const k=c.getContext('2d');k.fillStyle='#fff';k.fillRect(0,0,c.width,c.height);k.drawImage(im,0,0,c.width,c.height);let q=.78,d=c.toDataURL('image/jpeg',q);while(d.length>1.4e6&&q>.35){q-=.12;d=c.toDataURL('image/jpeg',q)}res(d)};im.onerror=()=>res(null);im.src=rd.result};rd.readAsDataURL(file)})}
 
 /* ---------- задания на доске (панель в комнате) ---------- */
+function wrapText(s,n){const out=[];for(const para of String(s).split('\n')){let line='';for(const w of para.split(' ')){if((line+' '+w).trim().length>n&&line){out.push(line);line=w}else line=(line?line+' ':'')+w}out.push(line)}return out}
 const Drawer={ex:null,num:null,
  async toggle(){const d=$('#tdrawer');if(!d)return;if(!d.hidden){d.hidden=true;return}await Bank.load();this.ex=this.ex||BV.ex;d.hidden=false;this.draw()},
  draw(){const d=$('#tdrawer'),E=EXAMS[this.ex],list=Bank.meta.filter(t=>t.exam===this.ex&&(this.num==null||t.num===this.num)).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at).slice(0,120);
@@ -1878,10 +1917,13 @@ const Drawer={ex:null,num:null,
    <select id="tdn"><option value="">Все номера</option>${E.nums.map(([n,t])=>`<option value="${esc(n)}"${n===this.num?' selected':''}>${esc(E.topic?t:n+' · '+t)}</option>`).join('')}</select>
    <div class="tdlist">${list.map(t=>`<button class="tdi" data-a="tdadd" data-id="${t.id}" title="Положить на доску">${t.img===false?`<p>${esc((t.text||'').slice(0,160))}</p>`:`<img data-tid="${t.id}" alt="">`}<span>${esc(numLabel(t.exam,t.num))}${t.ans?' · ответ '+esc(t.ans):''}</span></button>`).join('')||'<p class="empty">Здесь пусто. Загрузите задания на странице «База заданий».</p>'}</div>`;
   lazyImgs(d);$('#tdex',d).onchange=e=>{this.ex=e.target.value;this.num=null;this.draw()};$('#tdn',d).onchange=e=>{this.num=e.target.value||null;this.draw()}},
- async add(id){const t=Bank.get(id);if(!t)return;if(t.img===false){const R=B.vrect();B.addItem({t:'t',id:uid(),x:R.x0+40/B.v.z,y:R.y0+90/B.v.z,txt:(t.text||'').slice(0,300),c:'#17141F',s:28});return}
-  const d=await taskImg(id);if(!d)return;const im=new Image();im.onload=()=>{const R=B.vrect(),vw=R.x1-R.x0,vh=R.y1-R.y0,f=Math.min(vw*.6/im.width,vh*.7/im.height,2),w=im.width*f,h=im.height*f;const it={t:'i',id:uid(),x:R.x0+(vw-w)/2,y:R.y0+(vh-h)/2,w,h,src:d};B.addItem(it);B.sel=it;A.tool($('[data-t=select]'));toast('Задание на доске')};im.src=d}};
+ async add(id){const t=Bank.get(id);if(!t)return;if(t.img===false||t.fig){const R=B.vrect();const lines=wrapText(t.text||'',70).slice(0,t.fig?14:24);B.addItem({t:'t',id:uid(),x:R.x0+40/B.v.z,y:R.y0+60/B.v.z,txt:lines.join('\n'),c:'#17141F',s:22});if(t.img===false)return toast('Задание на доске')}
+  const d=await taskImg(id);if(!d)return;const im=new Image();im.onload=()=>{const R=B.vrect(),vw=R.x1-R.x0,vh=R.y1-R.y0,f=Math.min(vw*.6/(im.width||600),vh*.7/(im.height||400),2),w=(im.width||600)*f,h=(im.height||400)*f;const it={t:'i',id:uid(),x:R.x0+(vw-w)/2,y:R.y0+(t.fig?vh*.45:(vh-h)/2),w,h,src:d};B.addItem(it);B.sel=it;A.tool($('[data-t=select]'));toast('Задание на доске')};im.src=d}};
 
 Object.assign(A,{
+ bfipi(){fipiOpen()},
+ async bhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))t.hide=true;await Bank.save();toast('Скрыто из тренажёра: '+BV.sel.size);viewBank()},
+ async bunhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))delete t.hide;await Bank.save();toast('Открыто ученикам: '+BV.sel.size);viewBank()},
  bex(el){BV.ex=el.dataset.v;BV.num=null;BV.lim=60;viewBank()},
  bnum(el){BV.num=el.dataset.v||null;BV.lim=60;viewBank()},
  bmore(){BV.lim+=60;viewBank()},
@@ -1899,6 +1941,150 @@ async function chooseStudent(){if(!S.students.length){toast('Сначала до
  w.innerHTML=`<div class="mbox"><h2>Кому назначить?</h2><div class="slist">${S.students.map(s=>`<button data-sid="${s.id}">${avatar(s.name)}<span>${esc(s.name)}</span></button>`).join('')}</div><div class="mact"><button data-m="no">Отмена</button></div></div>`;document.body.appendChild(w);
  return new Promise(r=>w.addEventListener('click',e=>{const b=e.target.closest('[data-sid]');if(b){w.remove();r(S.students.find(s=>s.id===b.dataset.sid))}else if(e.target===w||e.target.closest('[data-m=no]')){w.remove();r(null)}}))}
 async function asgStatus(s){if(!Cloud.on||!(s.asgs||[]).length)return;for(const a of s.asgs.slice(0,12)){try{const sub=await Cloud.rpc('kab_get',{p_token:s.token,p_item:'sub:'+a.id});const el=$(`[data-asg="${a.id}"]`);if(el)el.innerHTML=sub?`<span class="chip ok">сдано: ${sub.score} из ${sub.total}</span>`:'<span class="chip">не сдано</span>'}catch(_){}}}
+
+/* ---------- файлы к заданиям: создаются по «зерну» прямо в браузере ---------- */
+// Один и тот же код работает в браузере (скачать файл) и в генераторе базы (посчитать ответ).
+const TaskFiles=(()=>{
+ function R(seed){let a=seed>>>0;const f=()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+  f.int=(lo,hi)=>lo+Math.floor(f()*(hi-lo+1));f.pick=a=>a[Math.floor(f()*a.length)];return f}
+ const W10=['и','в','не','на','он','что','с','как','это','она','а','но','так','его','все','было','был','мы','они','к','у','же','вы','за','бы','по','только','ее','мне','было','вот','от','меня','еще','нет','о','из','ему','теперь','когда','даже','ну','вдруг','ли','если','уже','или','ни','быть','был','него','до','вас','нибудь','опять','уж','вам','ведь','там','потом','себя','ничего','ей','может','они','тут','где','есть','надо','ней','для','мы','тебя','их','чем','была','сам','чтоб','без','будто','чего','раз','тоже','себе','под','будет','ж','тогда','кто','этот','того','потому','этого','какой','совсем','ним','здесь','этом','один','почти','мой','тем','чтобы','нее','кажется','сейчас','были','куда','зачем','всех','никогда','можно','при','наконец','два','об','другой','хоть','после','над','больше','тот','через','эти','нас','про','всего','них','какая','много','разве','три','эту','моя','впрочем','хорошо','свою','этой','перед','иногда','лучше','чуть','том','нельзя','такой','им','более','всегда','конечно','всю','между',
+  'дом','лес','река','город','дорога','окно','солнце','ветер','утро','вечер','ночь','день','дождь','снег','поле','сад','мост','берег','море','небо','звезда','друг','брат','сестра','мать','отец','учитель','книга','письмо','слово','время','жизнь','работа','школа','улица','дверь','свет','голос','рука','глаза','голова','сердце','лицо','земля','вода','огонь','камень','дерево','трава','цветок','птица','собака','лошадь'];
+ const gens={
+  e9(r){const out=[];for(let i=0;i<1000;i++){const n=r.int(0,9)<3?6:r.pick([4,5,6,7]);const row=[];for(let j=0;j<n;j++)row.push(r.int(1,r.int(0,1)?40:100));if(r()<.25){const k=r.int(0,n-1),m=r.int(0,n-1);row[k]=row[m]}out.push(row.join(';'))}return out.join('\n')},
+  e10(r){const ws=[];const n=r.int(2500,4000);for(let i=0;i<n;i++){let w=r.pick(W10);if(r()<.08)w=w[0].toUpperCase()+w.slice(1);ws.push(w)}let s='';for(let i=0;i<ws.length;i++){s+=ws[i];s+=(i%r.int(8,14)===0?'. ':(r()<.05?', ':' '))}return s.replace(/ \. /g,'. ')},
+  e17(r){const out=[];for(let i=0;i<2000;i++)out.push(r.int(-10000,10000));return out.join('\n')},
+  e18(r){const n=r.int(8,12),rows=[];for(let i=0;i<n;i++){const row=[];for(let j=0;j<n;j++)row.push(r.int(1,99));rows.push(row.join(';'))}return rows.join('\n')},
+  e24(r){const al=r.pick(['XYZ','ABC','ABCD','KLMN','QRSTU','AB']);let s='';const n=r.int(4000,8000);for(let i=0;i<n;i++)s+=al[r.int(0,al.length-1)];return s},
+  e26(r){const n=r.int(800,1200),S=r.int(n*20,n*45);const out=[n+' '+S];for(let i=0;i<n;i++)out.push(String(r.int(1,100)));return out.join('\n')},
+  e27(r){const k=r.int(2,3);const cs=[];for(let i=0;i<k;i++)cs.push([r.int(-5,20)*1+i*12,r.int(-5,15)]);const out=[];const n=r.int(600,1000);for(let i=0;i<n;i++){const c=cs[r.int(0,k-1)];const a=r()*Math.PI*2,d=Math.pow(r(),1.3)*r.int(2,3);out.push((c[0]+Math.cos(a)*d).toFixed(4)+' '+(c[1]+Math.sin(a)*d).toFixed(4))}return 'X Y\n'+out.join('\n')}
+ };
+ return{make(spec){const g=gens[spec.gen];return g?g(R(spec.seed)):''},
+  download(spec){const t=this.make(spec);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download=spec.name||'data.txt';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}};
+})();
+
+/* ---------- тренажёр ученика ---------- */
+const PR={token:'',cat:null,ex:null,list:[],i:0,res:{},mode:'num',title:''};
+async function prApi(path,body){const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),30000);
+ const h={'Content-Type':'application/json'};if(Vault.on&&Vault.tok&&!PR.student)h.Authorization='Bearer '+Vault.tok;
+ try{const r=await fetch(location.origin+path,{method:body?'POST':'GET',headers:h,body:body?JSON.stringify(body):undefined,signal:ctl.signal});
+  const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j&&j.message||('Ошибка '+r.status));return j}finally{clearTimeout(tm)}}
+const prImg=id=>`${location.origin}/api/practice/img?t=${encodeURIComponent(PR.token)}&id=${encodeURIComponent(id)}`;
+// сводка прогресса: по экзамену и номеру
+function prStats(cat,ex){const by={};for(const [id,p] of Object.entries(cat.progress||{})){if(p[4]!==ex)continue;const n=p[5];const s=by[n]=by[n]||{ok:0,tried:0};s.tried++;if(p[0])s.ok++}return by}
+const EX_ORDER=['oge_inf','ege_inf','oge_math','ege_prof','ent_inf','other'];
+
+async function viewPractice(token,ex,mode,arg){const my=rid;PR.token=token;PR.student=true;document.title='Тренажёр';
+ if(!PR.cat||PR.cat.token!==token){app.innerHTML='<div class="joinbox"><span class="spin"></span>Загружаем тренажёр…</div>';
+  try{PR.cat=await prApi(`/api/practice/catalog?t=${encodeURIComponent(token)}`);PR.cat.token=token}catch(e){if(my!==rid)return;app.innerHTML=`<div class="joinbox"><p>${esc(e.message||'Тренажёр недоступен')}</p><a class="back" href="#/join/${esc(token)}" style="margin-top:14px">${ic('back')}Назад</a></div>`;return}}
+ if(my!==rid)return;
+ const cat=PR.cat,exams=EX_ORDER.filter(k=>cat.exams[k]);
+ if(!exams.length){app.innerHTML=`<div class="joinbox"><p>Репетитор пока не добавил задания в тренажёр.</p><a class="back" href="#/join/${esc(token)}" style="margin-top:14px">${ic('back')}Назад</a></div>`;return}
+ ex=ex&&cat.exams[ex]?ex:(PR.ex&&cat.exams[PR.ex]?PR.ex:exams[0]);PR.ex=ex;
+ if(mode==='n'&&arg!=null)return prSolve(ex,'n',arg);
+ if(mode==='v')return prSolve(ex,'v',arg);
+ const E=EXAMS[ex]||{t:ex,nums:[]},counts=cat.exams[ex],st=prStats(cat,ex);
+ const nums=Object.keys(counts).sort(numSort);
+ const tot=nums.reduce((a,n)=>a+counts[n],0),ok=nums.reduce((a,n)=>a+((st[n]||{}).ok||0),0),tried=nums.reduce((a,n)=>a+((st[n]||{}).tried||0),0);
+ const vars=(cat.variants||[]).filter(v=>v.exam===ex);
+ app.innerHTML=navHTML(`<a class="btn ghost" href="#/join/${esc(token)}">${ic('back')}<span class="nl">Кабинет</span></a>`)+`<main class="wrap"><div class="shead rise"><div><h1>Тренажёр</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Решайте задания по номерам, собирайте свои варианты и решайте варианты прошлых лет. Прогресс сохраняется.</p></div></div>
+ <div class="extabs rise">${exams.map(k=>`<a class="${k===ex?'act':''}" href="#/practice/${esc(token)}/${k}">${esc((EXAMS[k]||{t:k}).t)}</a>`).join('')}</div>
+ <div class="prhead rise"><div class="ring" style="--p:${tot?Math.round(ok/tot*100):0}"><b>${ok}</b><small>из ${tot}</small></div>
+  <div><h3>Решено верно: ${ok} ${plural(ok,'задание','задания','заданий')}</h3><p class="hint" style="margin:4px 0 0">${tried?`Попыток по заданиям: ${tried}, точность ${Math.round(ok/tried*100)}%.`:'Начните с любого номера — прогресс появится здесь.'}</p></div>
+  <span class="grow"></span><a class="btn pri" href="#/practice/${esc(token)}/${ex}/v">${ic('play',1)}Собрать вариант</a></div>
+ ${vars.length?`<section class="panel rise"><h3>Варианты прошлых лет и демоверсии</h3><div class="vlist">${vars.map(v=>`<a class="vitem" href="#/practice/${esc(token)}/${ex}/v/${encodeURIComponent(v.name)}"><b>${esc(v.name)}</b><small>${v.n} ${plural(v.n,'задание','задания','заданий')}</small></a>`).join('')}</div></section>`:''}
+ <div class="prgrid rise">${nums.map(n=>{const s=st[n]||{ok:0,tried:0},p=Math.round(s.ok/counts[n]*100);return `<a class="prnum" href="#/practice/${esc(token)}/${ex}/n/${encodeURIComponent(n)}"><b>${esc(E.topic?(numTitle(ex,n)||n):'№ '+n)}</b><span>${esc(E.topic?'':numTitle(ex,n))}</span>
+  <div class="bar"><i style="width:${p}%"></i></div><small>${s.ok} из ${counts[n]}${s.tried?` · точность ${Math.round(s.ok/s.tried*100)}%`:''}</small></a>`}).join('')}</div></main>`;
+}
+function prTaskHTML(t,i,variant){const done=PR.res[t.id];return `<section class="panel hwt prt${PR.anim?' rise':''}" data-id="${esc(t.id)}">
+  <div class="rhead">${variant?`<b>${i+1}.</b>`:''}<span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">развёрнутый ответ</span>':''}<span class="grow"></span>${done?(done.ok===true?'<span class="chip ok">верно</span>':done.ok===false?'<span class="chip neg">неверно</span>':''):''}</div>
+  ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${t.img?`<img class="tbig" src="${prImg(t.id)}" alt="Условие задания" loading="lazy">`:''}
+  ${t.file?`<p><button class="mini" data-a="prfile" data-id="${esc(t.id)}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
+  ${t.kind==='photo'?`<p class="hint">Решите на листе или в редакторе, затем откройте ответ и честно отметьте результат.</p>`:`<div class="form"><input data-pa="${esc(t.id)}" placeholder="${t.kind==='choice'?'Буквы ответа, например AC':'Ваш ответ'}" autocomplete="off" value="${esc(done&&done.given||'')}"${done&&!variant?' disabled':''}></div>`}
+  <div class="prfb" id="fb-${esc(t.id)}">${done?prFeedback(t,done):''}</div></section>`}
+function prFeedback(t,r){if(!r||(!r.shown&&r.ok==null))return'';return `${r.ok===false||t.kind==='photo'||r.shown?`<p>Ответ: <b>${esc(r.ans||'—')}</b></p>`:''}${r.sol?`<details><summary>Решение</summary><pre class="sol">${esc(r.sol)}</pre></details>`:''}
+ ${t.kind==='photo'&&r.self==null?`<div class="form"><button class="mini" data-a="prself" data-id="${esc(t.id)}" data-v="1">${ic('play',1)}Решил верно</button><button class="mini" data-a="prself" data-id="${esc(t.id)}" data-v="0">Ошибся</button></div>`:''}`}
+async function prSolve(ex,mode,arg){const my=rid,tok=PR.token;PR.mode=mode;PR.res={};
+ app.innerHTML='<div class="joinbox"><span class="spin"></span>Загружаем задания…</div>';
+ try{PR.list=mode==='n'?await prApi(`/api/practice/list?t=${encodeURIComponent(tok)}&ex=${ex}&num=${encodeURIComponent(arg)}`)
+  :await prApi(`/api/practice/variant?t=${encodeURIComponent(tok)}&ex=${ex}${arg?'&name='+encodeURIComponent(arg):''}`)}catch(e){toast(e.message);location.hash=`#/practice/${tok}/${ex}`;return}
+ if(my!==rid)return;
+ const prog=PR.cat.progress||{};
+ if(mode==='n'){const fresh=PR.list.filter(t=>!(prog[t.id]&&prog[t.id][0]));PR.list=fresh.concat(PR.list.filter(t=>prog[t.id]&&prog[t.id][0]));PR.i=0}
+ PR.anim=true;PR.title=mode==='n'?`${numLabel(ex,arg)} · ${numTitle(ex,arg)}`:(arg||'Свой вариант');
+ prDraw()}
+function prDraw(){setTimeout(()=>PR.anim=false,0);const tok=PR.token,ex=PR.ex;const back=`<a class="btn ghost" href="#/practice/${esc(tok)}/${ex}">${ic('back')}<span class="nl">Тренажёр</span></a>`;
+ if(PR.mode==='n'){const t=PR.list[PR.i];const solved=PR.list.filter(x=>(PR.cat.progress[x.id]||[])[0]).length;
+  app.innerHTML=navHTML(back)+`<main class="wrap hw"><div class="shead${PR.anim?' rise':''}"><div><h1>${esc(PR.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Задание ${PR.i+1} из ${PR.list.length} · решено верно: ${solved}</p></div></div>
+   ${t?prTaskHTML(t,PR.i,false):'<p class="panel empty">Заданий нет.</p>'}
+   <div class="prnav${PR.anim?' rise':''}"><button data-a="prprev"${PR.i?'':' disabled'}>${ic('left')}Назад</button>${t&&t.kind!=='photo'&&!PR.res[t.id]?`<button class="pri" data-a="prcheck">Проверить</button><button data-a="prshow">Показать ответ</button>`:t&&t.kind==='photo'&&!PR.res[t.id]?`<button class="pri" data-a="prshow">Показать ответ</button>`:''}<span class="grow"></span><button data-a="prnext"${PR.i<PR.list.length-1?'':' disabled'}>Дальше${ic('right')}</button></div></main>`;
+  const inp=$('[data-pa]');if(inp&&!inp.disabled){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter')A.prcheck()}}return}
+ const fin=PR.fin;const short=PR.list.filter(t=>t.kind!=='photo');const score=short.filter(t=>PR.res[t.id]&&PR.res[t.id].ok).length;
+ app.innerHTML=navHTML(back)+`<main class="wrap hw"><div class="shead${PR.anim?' rise':''}"><div><h1>${esc(PR.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Заданий: ${PR.list.length}${fin?` · краткий ответ: <b>верно ${score} из ${short.length}</b>`:''}</p></div></div>
+  ${PR.list.map((t,i)=>prTaskHTML(t,i,true)).join('')}
+  <div class="prnav${PR.anim?' rise':''}">${fin?`<a class="btn pri" href="#/practice/${esc(tok)}/${ex}">Готово</a>`:`<button class="pri" data-a="prfinish" style="height:48px;padding:0 24px">${ic('play',1)}Завершить и проверить</button><span class="hint" style="margin:0">Ответы проверятся все сразу, как на экзамене.</span>`}</div></main>`}
+async function prSend(items){try{return await prApi('/api/practice/check',{t:PR.token,items})}catch(e){toast(e.message||'Сервер не отвечает');return null}}
+function prRemember(id,ok){const p=PR.cat.progress[id]||[0,0,0,0,PR.ex,(PR.list.find(t=>t.id===id)||{}).num];p[0]=Math.max(p[0],+ok);p[1]=+ok;p[2]++;p[3]=Date.now();PR.cat.progress[id]=p}
+Object.assign(A,{
+ prprev(){if(PR.i>0){PR.i--;prDraw()}},prnext(){if(PR.i<PR.list.length-1){PR.i++;prDraw()}},
+ async prcheck(){const t=PR.list[PR.i];if(!t||PR.res[t.id])return;const v=($('[data-pa]')||{}).value||'';if(!v.trim())return toast('Впишите ответ');
+  const r=await prSend([{id:t.id,answer:v.trim()}]);if(!r||!r[t.id])return;PR.res[t.id]={...r[t.id],given:v.trim()};prRemember(t.id,r[t.id].ok);prDraw();toast(r[t.id].ok?'Верно!':'Неверно')},
+ async prshow(){const t=PR.list[PR.i];if(!t)return;const r=await prSend([{id:t.id,reveal:true}]);if(!r||!r[t.id])return;PR.res[t.id]={...r[t.id],shown:true};prDraw()},
+ async prself(el){const t=PR.list.find(x=>x.id===el.dataset.id);if(!t)return;const v=el.dataset.v==='1';await prSend([{id:t.id,reveal:true,self:v}]);PR.res[t.id]={...PR.res[t.id],self:v,ok:v};prRemember(t.id,v);
+  const fb=$('#fb-'+CSS.escape(t.id));if(PR.mode==='n')prDraw();else if(fb)fb.innerHTML=prFeedback(t,PR.res[t.id])},
+ async prfinish(){const items=[];for(const t of PR.list){if(t.kind==='photo')items.push({id:t.id,reveal:true});else{const i=$(`[data-pa="${CSS.escape(t.id)}"]`);items.push({id:t.id,answer:(i&&i.value||'').trim()})}}
+  const b=$('[data-a=prfinish]');if(b)b.disabled=true;const r=await prSend(items);if(!r){if(b)b.disabled=false;return}
+  for(const it of items){const x=r[it.id];if(!x)continue;PR.res[it.id]={...x,given:it.answer,shown:!!it.reveal};if(!it.reveal)prRemember(it.id,x.ok)}PR.fin=true;prDraw();scrollTo(0,0)},
+ prfile(el){const t=(PR.list||[]).find(x=>x.id===el.dataset.id)||Bank.get&&Bank.get(el.dataset.id);if(t&&t.file)TaskFiles.download(t.file)}
+});
+
+/* прогресс ученика на странице ученика (для репетитора) */
+async function prTutorPanel(s){const box=$('#prpanel');if(!box||!Vault.on)return;
+ try{PR.student=false;const cat=await prApi(`/api/practice/catalog?t=${encodeURIComponent(s.token)}`);const by={};let ok=0,tried=0,last=0;
+  for(const p of Object.values(cat.progress||{})){const k=p[4];const e=by[k]=by[k]||{ok:0,tried:0,nums:{}};e.tried++;tried++;if(p[0]){e.ok++;ok++}last=Math.max(last,p[3]);const n=e.nums[p[5]]=e.nums[p[5]]||{ok:0,tried:0};n.tried++;if(p[0])n.ok++}
+  box.innerHTML=`<h3>Тренажёр</h3>${tried?`<p class="hint">Решено верно: <b>${ok}</b> из ${tried} попыток · последний раз ${fmtDate(last)}</p>
+   ${Object.entries(by).map(([k,e])=>`<p style="margin:10px 0 6px"><b>${esc((EXAMS[k]||{t:k}).t)}</b>: ${e.ok} из ${e.tried}</p><div class="prmini">${Object.keys(e.nums).sort(numSort).map(n=>{const x=e.nums[n],p=Math.round(x.ok/x.tried*100);return `<span title="${esc(numLabel(k,n))}: ${x.ok} из ${x.tried}" style="--p:${p}"><b>${esc(n)}</b>${p}%</span>`}).join('')}</div>`).join('')}`
+   :'<p class="hint">Ученик ещё не решал задания в тренажёре.</p>'}<p class="hint">Ссылка на тренажёр — в кабинете ученика.</p>`}
+ catch(e){box.innerHTML=`<h3>Тренажёр</h3><p class="hint">${esc(e.message)}</p>`}}
+
+/* ---------- демоверсии и варианты с сайта ФИПИ (через свой сервер) ---------- */
+const FIPI_PAGES=[['ОГЭ: демоверсии, спецификации, кодификаторы','https://fipi.ru/oge/demoversii-specifikacii-kodifikatory'],['ЕГЭ: демоверсии, спецификации, кодификаторы','https://fipi.ru/ege/demoversii-specifikacii-kodifikatory']];
+async function fipiOpen(){if(!Vault.on||!Vault.tok)return toast('Нужен свой сервер и вход');const w=document.createElement('div');w.className='modal';
+ w.innerHTML=`<div class="mbox wide tall"><h2>Материалы с сайта ФИПИ</h2><p>Сервер скачает страницу ФИПИ и покажет файлы. Выберите архив или PDF демоверсии — сайт разрежет его на задания, а вы проверите номера и ответы. Каждый загруженный файл станет вариантом в тренажёре учеников.</p>
+  <div class="form"><select id="fpg">${FIPI_PAGES.map(([t,u])=>`<option value="${u}">${esc(t)}</option>`).join('')}</select><input id="fpu" placeholder="или вставьте ссылку на страницу или файл с fipi.ru"><button class="pri" id="fpgo">Открыть</button></div>
+  <input id="fpf" placeholder="Фильтр: информатика, математика, 2025…"><div class="flist" id="fpl"><p class="hint">Выберите страницу и нажмите «Открыть».</p></div>
+  <div class="mact"><button data-m="no">Закрыть</button></div></div>`;
+ document.body.appendChild(w);const close=()=>w.remove();w.addEventListener('click',e=>{if(e.target===w||e.target.closest('[data-m=no]'))close()});
+ let links=[];const draw=()=>{const f=$('#fpf',w).value.trim().toLowerCase();const l=links.filter(x=>!f||(x.text+' '+x.url).toLowerCase().includes(f));
+  $('#fpl',w).innerHTML=l.length?l.map((x,i)=>`<button class="fitem" data-i="${links.indexOf(x)}">${ic(/\.zip/i.test(x.url)?'save':'img')}<span><b>${esc(x.text)}</b><small>${esc(decodeURIComponent(x.url.split('/').pop()))}</small></span></button>`).join(''):'<p class="hint">Ничего не найдено.</p>'};
+ $('#fpf',w).oninput=draw;
+ $('#fpgo',w).onclick=async()=>{const u=$('#fpu',w).value.trim()||$('#fpg',w).value;$('#fpl',w).innerHTML='<p><span class="spin"></span> Загружаю страницу ФИПИ…</p>';
+  try{if(/\.(zip|pdf)(\?|$)/i.test(u)){links=[{url:u,text:decodeURIComponent(u.split('/').pop())}];draw();return}const r=await fipiReq('links',u);links=r.links;if(!links.length)$('#fpl',w).innerHTML='<p class="hint">На странице нет PDF или архивов.</p>';else draw()}
+  catch(e){$('#fpl',w).innerHTML=`<p class="hint">${esc(e.message)}</p>`}};
+ $('#fpl',w).addEventListener('click',async e=>{const b=e.target.closest('.fitem');if(!b)return;const x=links[+b.dataset.i];if(b.dataset.entry!=null)return fipiImport(x.url,b.dataset.entry,b.dataset.name,close);
+  b.classList.add('busy');try{const r=await fipiReq('file',x.url);
+   if(r instanceof Blob){close();return fipiFile(r,x.text)}
+   $('#fpl',w).innerHTML=`<p class="hint">Архив «${esc(x.text)}». Выберите файл демоверсии:</p>`+r.files.map(f=>`<button class="fitem" data-i="${b.dataset.i}" data-entry="${esc(f.name)}" data-name="${esc(x.text)}">${ic('img')}<span><b>${esc(f.name.split('/').pop())}</b><small>${Math.round(f.size/1024)} КБ</small></span></button>`).join('')}
+  catch(err){b.classList.remove('busy');toast(err.message,4000)}})}
+async function fipiReq(kind,url,entry){const r=await fetch(`${location.origin}/api/fipi/${kind}?url=${encodeURIComponent(url)}${entry!=null?'&entry='+encodeURIComponent(entry):''}`,{headers:{Authorization:'Bearer '+Vault.tok}});
+ if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||('Ошибка '+r.status))}
+ return /json/.test(r.headers.get('content-type')||'')?r.json():r.blob()}
+async function fipiImport(url,entry,name,close){toast('Скачиваю файл…',20000);try{const b=await fipiReq('file',url,entry);close();fipiFile(b,entry.split('/').pop().replace(/\.pdf$/i,''))}catch(e){toast(e.message,4000)}}
+async function fipiFile(blob,name){let nm=await ask('Название варианта','ФИПИ · '+String(name).replace(/\.pdf$/i,''),'Дальше');if(nm===false||nm==null)return;nm=nm.trim()||'ФИПИ';
+ const f=new File([blob],nm.replace(/[\\/:*?"<>|]/g,' ')+'.pdf',{type:'application/pdf'});Imp.open([f],BV.ex)}
+
+/* ---------- готовый набор заданий (файл .json) ---------- */
+async function packImport(files){files=[].concat(files);let tasks=[];
+ for(const f of files){try{const d=JSON.parse(await f.text());const t=Array.isArray(d)?d:d.tasks;if(Array.isArray(t))tasks=tasks.concat(t)}catch(e){toast('Не получилось прочитать '+f.name)}}
+ if(!tasks.length)return toast('В файле нет заданий');await Bank.load();
+ const have=new Set(Bank.meta.map(t=>t.id));const fresh=tasks.filter(t=>t&&t.id&&t.exam&&!have.has(t.id));
+ if(!fresh.length)return toast('Все задания из набора уже есть в базе');
+ if(!await sure(`Добавить ${fresh.length} ${plural(fresh.length,'задание','задания','заданий')}?`,`Уже в базе: ${tasks.length-fresh.length}. Новые задания добавятся к вашим, ничего не удалится.`,'Добавить'))return;
+ const at=Date.now();let i=0;toast('Добавляю задания…',120000);Vault.bulk=true;
+ try{for(const t of fresh){const img=t.img;const x={id:t.id,exam:t.exam,num:String(t.num),kind:t.kind||'short',text:t.text||'',ans:String(t.ans??''),src:t.src||'Набор',at:at+(i++)};
+  if(t.fig)x.fig=true;if(t.file)x.file=t.file;if(t.sol)x.sol=t.sol;if(!img)x.img=false;Bank.meta.push(x);if(img)await DB.set('timg:'+x.id,img);
+  if(i%500===0)toast(`Добавляю задания: ${i} из ${fresh.length}…`,120000)}
+  await Bank.save()}finally{Vault.bulk=false;Vault.saveMeta();Vault.later(300)}
+ toast('Добавлено: '+fresh.length+(Vault.on?'. Отправляю на сервер — это займёт несколько минут.':''),5000);viewBank()}
 </script>
 </body>
 </html>
