@@ -286,19 +286,38 @@ function hwIds(token) {
   }
   return s;
 }
-let PC = { bu: -1, su: -1, tasks: [], byId: new Map(), tokens: new Set(), off: false };
+/* готовая база: файлы packs/<экзамен>.json на сервере, загружает репетитор */
+const PACK_DIR = path.join(DATA, 'packs');
+fs.mkdirSync(PACK_DIR, { recursive: true });
+const PK = { v: 0, byExam: new Map(), byId: new Map() };
+function packsLoad() {
+  PK.byExam = new Map(); PK.byId = new Map();
+  for (const f of fs.readdirSync(PACK_DIR).filter(f => /^[a-z_]+\.json$/.test(f))) {
+    try { const d = JSON.parse(fs.readFileSync(path.join(PACK_DIR, f), 'utf8')); const ex = f.slice(0, -5);
+      const tasks = (d.tasks || []).filter(t => t && t.id && t.exam === ex).map(t => ({ ...t, pack: true }));
+      PK.byExam.set(ex, { exam: ex, name: d.name || 'Готовая база', made: d.made || '', tasks });
+      for (const t of tasks) PK.byId.set(t.id, t);
+    } catch (e) { console.error('pack', f, e.message); }
+  }
+  PK.v++;
+}
+packsLoad();
+const packMeta = t => { const { img, ...rest } = t; return { ...rest, img: img ? true : false }; };
+
+let PC = { bu: -1, su: -1, pv: -1, tasks: [], byId: new Map(), tokens: new Set(), off: false };
 function practiceData() {
   const b = Q.vGet.get('bank'), st = Q.vGet.get('state');
   const bu = b ? b.u : 0, su = st ? st.u : 0;
-  if (bu === PC.bu && su === PC.su) return PC;
-  let tasks = [], tokens = new Set(), off = false;
+  if (bu === PC.bu && su === PC.su && PK.v === PC.pv) return PC;
+  let tasks = [], tokens = new Set(), off = false, phide = new Set();
   try { const a = b && b.body ? JSON.parse(b.body) : []; if (Array.isArray(a)) tasks = a.filter(t => t && t.id && t.exam && !t.hide); } catch (e) {}
-  try { const sj = st && st.body ? JSON.parse(st.body) : null; if (sj) { for (const x of sj.students || []) if (x && x.token) tokens.add(x.token); off = !!(sj.settings && sj.settings.practiceOff); } } catch (e) {}
+  try { const sj = st && st.body ? JSON.parse(st.body) : null; if (sj) { for (const x of sj.students || []) if (x && x.token) tokens.add(x.token); off = !!(sj.settings && sj.settings.practiceOff); for (const id of (sj.settings && sj.settings.packHide) || []) phide.add(id); } } catch (e) {}
+  for (const p of PK.byExam.values()) for (const t of p.tasks) if (!phide.has(t.id)) tasks.push(t);
   const byId = new Map(tasks.map(t => [t.id, t]));
-  PC = { bu, su, tasks, byId, tokens, off };
+  PC = { bu, su, pv: PK.v, tasks, byId, tokens, off };
   return PC;
 }
-const pub = t => ({ id: t.id, exam: t.exam, num: t.num, kind: t.kind || 'short', text: t.img === false || t.fig ? (t.text || '') : '', img: t.img !== false, fig: !!t.fig, file: t.file || null, src: t.src || '' });
+const pub = t => ({ id: t.id, exam: t.exam, num: t.num, kind: t.kind || 'short', text: t.img === false || t.fig || (t.pack && !t.img) ? (t.text || '') : '', img: t.pack ? !!t.img : t.img !== false, fig: !!t.fig, file: t.file || null, src: t.src || '', sub: t.sub || '' });
 const numKey = n => { const m = /^(\d+)(?:\.(\d+))?/.exec(n || ''); return m ? +m[1] * 100 + (+m[2] || 0) : 1e6; };
 async function practice(req, res, url) {
   const ip = clientIp(req);
@@ -317,7 +336,7 @@ async function practice(req, res, url) {
     const ex = {}, vars = {};
     for (const t of T) {
       (ex[t.exam] = ex[t.exam] || {})[t.num] = (ex[t.exam][t.num] || 0) + 1;
-      if (t.src && t.src !== 'Своя база') { const k = t.exam + '|' + t.src; vars[k] = vars[k] || { exam: t.exam, name: t.src, n: 0 }; vars[k].n++; }
+      if (t.src && t.src !== 'Своя база' && !t.pack) { const k = t.exam + '|' + t.src; vars[k] = vars[k] || { exam: t.exam, name: t.src, n: 0 }; vars[k].n++; }
     }
     const prog = {}; for (const r of PQ.all.all(token)) { const t = D.byId.get(r.id); if (t) prog[r.id] = [r.ok, r.last, r.tries, r.at, t.exam, t.num]; }
     return sendJson(res, 200, { exams: ex, variants: Object.values(vars).filter(v => v.n >= 2), progress: prog });
@@ -340,16 +359,18 @@ async function practice(req, res, url) {
   }
   if (p === '/api/practice/img') {
     const id = q.get('id') || '';
-    if (!D.byId.has(id)) return fail(res, 404, 'not found');
-    const r = Q.vGet.get('timg:' + id);
-    if (!r || !r.body) return fail(res, 404, 'not found');
-    const d = JSON.parse(r.body); const m = /^data:([\w/+.-]+);base64,(.*)$/s.exec(String(d));
+    const pk = PK.byId.get(id);
+    if (!D.byId.has(id) && !(tutor && pk)) return fail(res, 404, 'not found');
+    let d;
+    if (pk) d = pk.img; else { const r = Q.vGet.get('timg:' + id); if (!r || !r.body) return fail(res, 404, 'not found'); d = JSON.parse(r.body); }
+    const m = /^data:([\w/+.-]+);base64,(.*)$/s.exec(String(d || ''));
     if (!m) return fail(res, 404, 'not found');
     const buf = Buffer.from(m[2], 'base64');
     res.writeHead(200, { 'Content-Type': m[1], 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400', ...CORS });
     return res.end(buf);
   }
   if (p === '/api/practice/check' && req.method === 'POST') {
+    if (tutor && !token) { const out = {}; for (const it of (Array.isArray(body.items) ? body.items : [])) { const t = PK.byId.get(String(it.id || '')); if (t) out[t.id] = { ans: t.ans || '', sol: t.sol || '' }; } return sendJson(res, 200, out); }
     const out = {};
     const items = Array.isArray(body.items) ? body.items.slice(0, 80) : [];
     for (const it of items) {
@@ -366,6 +387,33 @@ async function practice(req, res, url) {
       out[t.id] = r;
     }
     return sendJson(res, 200, out);
+  }
+  return fail(res, 404, 'not found');
+}
+
+async function packsApi(req, res, url) {
+  if (!session(req)) return fail(res, 401, 'Нужно войти');
+  const ex = url.searchParams.get('exam') || '';
+  if (url.pathname === '/api/packs' && req.method === 'GET') {
+    return sendJson(res, 200, [...PK.byExam.values()].map(p => { const nums = {}, subs = {}; for (const t of p.tasks) { nums[t.num] = (nums[t.num] || 0) + 1; } return { exam: p.exam, name: p.name, made: p.made, n: p.tasks.length, nums }; }));
+  }
+  if (url.pathname === '/api/packs/tasks') { const p = PK.byExam.get(ex); return sendJson(res, 200, p ? p.tasks.map(packMeta) : []); }
+  if (url.pathname === '/api/packs/upload' && req.method === 'POST') {
+    if (!/^[a-z_]{2,20}$/.test(ex)) return fail(res, 400, 'bad exam');
+    const body = await readBody(req, 90e6);
+    let d; try { d = JSON.parse(body); } catch (e) { return fail(res, 400, 'Файл повреждён'); }
+    const tasks = (Array.isArray(d) ? d : d.tasks || []).filter(t => t && t.id && t.exam === ex);
+    if (!tasks.length) return fail(res, 400, 'В файле нет заданий этого экзамена');
+    const tmp = path.join(PACK_DIR, ex + '.json.tmp');
+    fs.writeFileSync(tmp, JSON.stringify({ v: 2, exam: ex, name: d.name || 'Готовая база', made: d.made || '', tasks }));
+    fs.renameSync(tmp, path.join(PACK_DIR, ex + '.json'));
+    packsLoad();
+    return sendJson(res, 200, { ok: true, n: tasks.length });
+  }
+  if (url.pathname === '/api/packs' && req.method === 'DELETE') {
+    if (!/^[a-z_]{2,20}$/.test(ex)) return fail(res, 400, 'bad exam');
+    try { fs.unlinkSync(path.join(PACK_DIR, ex + '.json')); } catch (e) {}
+    packsLoad(); return sendJson(res, 200, { ok: true });
   }
   return fail(res, 404, 'not found');
 }
@@ -604,6 +652,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/functions/v1/turn') return await turn(req, res);
     if (p.startsWith('/api/practice/')) return await practice(req, res, url);
     if (p.startsWith('/api/fipi/')) return await fipi(req, res, url);
+    if (p === '/api/packs' || p.startsWith('/api/packs/')) return await packsApi(req, res, url);
     if (p.startsWith('/api/')) return await api(req, res, url);
     if (req.method === 'GET' || req.method === 'HEAD') return await site(req, res, url);
     return fail(res, 405, 'method not allowed');

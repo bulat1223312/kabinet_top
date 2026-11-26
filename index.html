@@ -324,13 +324,18 @@ pre.sol{background:var(--sf2);border-radius:12px;padding:12px;overflow:auto;font
 .prmini{display:flex;flex-wrap:wrap;gap:6px}
 .prmini span{--p:0;display:flex;flex-direction:column;align-items:center;min-width:46px;padding:6px 8px;border-radius:10px;font-size:11px;color:var(--ink2);background:linear-gradient(to top,var(--mint-l) calc(var(--p)*1%),var(--sf2) 0)}
 .prmini b{font-size:13px;color:var(--ink)}
-.timg.fig{display:flex;flex-direction:column;gap:6px}.timg.fig p{margin:0}
+.timg.fig{flex-direction:column;justify-content:flex-start;align-items:stretch;gap:8px;padding:12px 12px 10px}.timg.fig p{margin:0;padding:2px 0 0 34px!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:none;min-height:3.9em}.timg.fig img{flex:1;min-height:0;object-fit:contain;object-position:center;background:#fff;border-radius:9px}
 .flist{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-top:10px}
 .fitem{display:flex;align-items:center;gap:12px;text-align:left;justify-content:flex-start;height:auto;padding:10px 12px}
 .fitem span{display:flex;flex-direction:column}.fitem small{color:var(--mut);font-size:12px;word-break:break-all}
 .fitem.busy{opacity:.5;pointer-events:none}
 @media(max-width:640px){.prhead{flex-wrap:wrap}.prhead .btn{width:100%;justify-content:center}.prlink{flex-direction:column;align-items:stretch}}
-.tcard .timg>p:first-child{padding-top:22px}
+.tcard .timg:not(.fig)>p:first-child{padding-top:30px;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden;align-self:flex-start}
+.subbar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.subbar button{height:34px;padding:0 12px;border-radius:99px;font-size:13px;font-weight:600;background:var(--sf);box-shadow:var(--sh);border:0;color:var(--ink2);display:inline-flex;gap:6px;align-items:center}
+.subbar button i{font-style:normal;font-size:11px;color:var(--mut)}
+.subbar button.act{background:var(--ink);color:#fff}.subbar button.act i{color:#cfc9e6}
+.chip.soft{background:var(--sf2);color:var(--ink2)}
 </style>
 </head>
 <body>
@@ -1714,10 +1719,30 @@ const Bank={meta:null,
  async load(){if(!this.meta){const m=await DB.get('bank');this.meta=Array.isArray(m)?m.filter(t=>t&&t.id):[]}return this.meta},
  save(){return DB.set('bank',this.meta)},
  async add(t,img){t.id=t.id||uid();t.at=t.at||Date.now();t.ans=String(t.ans||'');t.kind=t.kind||'short';this.meta.push(t);if(img)await DB.set('timg:'+t.id,img);return t},
- img(id){return DB.get('timg:'+id)},
- get(id){return(this.meta||[]).find(t=>t.id===id)},
+ async img(id){if(Packs.byId.has(id))return Packs.img(id);return DB.get('timg:'+id)},
+ get(id){return(this.meta||[]).find(t=>t.id===id)||Packs.byId.get(id)},
+ // свои задания + готовая база с сервера для экзамена
+ items(ex,n){const own=(this.meta||[]).filter(t=>t.exam===ex&&(n==null||t.num===n));const pk=(Packs.tasks[ex]||[]).filter(t=>n==null||t.num===n);return own.concat(pk)},
  async del(ids){const set=new Set(ids);this.meta=this.meta.filter(t=>!set.has(t.id));for(const id of ids)await DB.del('timg:'+id);await this.save()},
- count(ex,n){return(this.meta||[]).filter(t=>t.exam===ex&&(n==null||t.num===n)).length}};
+ count(ex,n){const own=(this.meta||[]).filter(t=>t.exam===ex&&(n==null||t.num===n)).length;const p=(Packs.list||[]).find(x=>x.exam===ex);return own+(p?(n==null?p.n:(p.nums[n]||0)):0)}};
+/* готовая база на сервере */
+const Packs={list:null,tasks:{},byId:new Map(),busy:{},gen:0,
+ on(){return Vault.on&&!!Vault.tok},
+ async req(path,opt={}){const r=await fetch(location.origin+path,{...opt,headers:{Authorization:'Bearer '+Vault.tok,...(opt.headers||{})}});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||('Ошибка '+r.status))}return r},
+ async loadList(force){if(!this.on())return[];if(this.list&&!force)return this.list;try{this.list=await(await this.req('/api/packs')).json()}catch(e){this.list=this.list||[]}return this.list},
+ ready(ex){return!this.on()||!!this.tasks[ex]||!(this.list||[]).some(p=>p.exam===ex)},
+ async loadExam(ex){if(!this.on())return[];if(this.tasks[ex])return this.tasks[ex];if(this.busy[ex])return this.busy[ex];
+  const gen=this.gen;return this.busy[ex]=(async()=>{try{await this.loadList();if(!this.list.some(p=>p.exam===ex))return this.tasks[ex]=[];
+   const a=await(await this.req('/api/packs/tasks?exam='+ex)).json();if(gen!==this.gen)return a;const hide=new Set(S.settings.packHide||[]);
+   for(const t of a){t.pack=true;if(!t.img)t.img=false;else delete t.img;if(hide.has(t.id))t.hide=true;this.byId.set(t.id,t)}return this.tasks[ex]=a}finally{if(gen===this.gen)this.busy[ex]=null}})()},
+ async img(id){const r=await this.req('/api/practice/img?id='+encodeURIComponent(id));const b=await r.blob();return new Promise(res=>{const f=new FileReader();f.onload=()=>res(f.result);f.readAsDataURL(b)})},
+ reset(){this.gen=(this.gen||0)+1;this.list=null;this.tasks={};this.busy={};this.byId=new Map()},
+ async upload(files){let n=0;for(const f of files){let d;try{d=JSON.parse(await f.text())}catch(e){toast('Не получилось прочитать '+f.name);continue}
+   const tasks=Array.isArray(d)?d:d.tasks;if(!Array.isArray(tasks)||!tasks.length)continue;const exs=[...new Set(tasks.map(t=>t.exam))];
+   for(const ex of exs){const part=tasks.filter(t=>t.exam===ex);toast(`Загружаю на сервер: ${(EXAMS[ex]||{t:ex}).t}, ${part.length} заданий…`,120000);
+    await this.req('/api/packs/upload?exam='+ex,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:d.name,made:d.made,tasks:part})});n+=part.length}}
+  this.reset();await this.loadList(true);return n},
+ hide(ids,on){const s=new Set(S.settings.packHide||[]);for(const id of ids){if(on)s.add(id);else s.delete(id);const t=this.byId.get(id);if(t){if(on)t.hide=true;else delete t.hide}}S.settings.packHide=[...s];saveS()}};
 const imgCache=new Map();
 async function taskImg(id){if(imgCache.has(id))return imgCache.get(id);const d=await Bank.img(id);if(d)imgCache.set(id,d);if(imgCache.size>400)imgCache.delete(imgCache.keys().next().value);return d||null}
 function lazyImgs(root){const els=$$('img[data-tid]',root);const io='IntersectionObserver' in window?new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){io.unobserve(e.target);fill(e.target)}},{rootMargin:'300px'}):null;
@@ -1726,12 +1751,14 @@ function lazyImgs(root){const els=$$('img[data-tid]',root);const io='Intersectio
 /* ---------- страница базы ---------- */
 const BV={ex:'oge_inf',num:null,q:'',sel:new Set(),lim:60,pick:null};
 async function viewBank(){await Bank.load();document.title='База заданий';
- const ex=BV.ex,E=EXAMS[ex],all=Bank.meta.filter(t=>t.exam===ex);
+ const ex=BV.ex,E=EXAMS[ex];if(Packs.on()&&(!Packs.list||!Packs.ready(ex))){const my=rid;(Packs.list?Packs.loadExam(ex):Packs.loadList().then(()=>Packs.loadExam(ex))).then(()=>{if(my===rid&&location.hash.startsWith('#/bank')&&Packs.list&&Packs.ready(BV.ex))viewBank()}).catch(e=>toast(e.message))}
+ const all=Bank.items(ex);
  const list=all.filter(t=>(BV.num==null||t.num===BV.num)&&(!BV.q||(t.text||'').toLowerCase().includes(BV.q.toLowerCase())||(t.src||'').toLowerCase().includes(BV.q.toLowerCase())||t.ans===BV.q)).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at);
  const nums=E.nums.map(([n,t])=>{const c=all.filter(x=>x.num===n).length;return `<button class="nrow${BV.num===n?' act':''}" data-a="bnum" data-v="${esc(n)}"><b>${esc(E.topic?'':n)}</b><span>${esc(t)}</span><i>${c||''}</i></button>`}).join('');
  const extra=[...new Set(all.map(t=>t.num))].filter(n=>!E.nums.some(x=>x[0]===n));
- app.innerHTML=navHTML(`<a class="btn ghost" href="#/">${ic('back')}Кабинет</a>`)+`<main class="wrap"><div class="shead rise"><div><h1>База заданий</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Всего заданий: ${Bank.meta.length}. Загружайте PDF вариантов, сайт сам разрежет их на задания.</p></div>
+ app.innerHTML=navHTML(`<a class="btn ghost" href="#/">${ic('back')}Кабинет</a>`)+`<main class="wrap"><div class="shead rise"><div><h1>База заданий</h1><p class="hint" style="margin:8px 0 0;font-size:15px">${(()=>{const own=Bank.meta.filter(t=>!/^g-/.test(t.id)).length,pk=(Packs.list||[]).reduce((a,p)=>a+(p.n||0),0);return pk?`В готовой базе ${pk.toLocaleString('ru')} ${plural(pk,'задание','задания','заданий')}, ваших — ${own}.`:`Ваших заданий: ${own}.`})()} PDF вариантов сайт сам разрежет на задания.</p></div>
   <div class="acts">${Vault.on?`<button data-a="bfipi">${ic('down')}<span class="nl">С сайта ФИПИ</span></button>`:''}<label class="btn" style="margin:0" title="Готовый набор заданий (.json)">${ic('upl')}<span class="nl">Набор</span><input type="file" id="bpack" accept=".json,application/json" multiple hidden></label><button data-a="bnew">${ic('plus')}Задание</button><label class="btn pri" style="margin:0">${ic('upl')}Загрузить PDF<input type="file" id="bimp" accept="application/pdf,image/*" multiple hidden></label></div></div>
+ ${(Bank.meta||[]).some(t=>/^g-/.test(t.id))&&Packs.on()?`<div class="panel rise prlink" style="margin-bottom:14px"><div><b>Старая версия готовой базы</b><p class="hint" style="margin:4px 0 0">${(Bank.meta||[]).filter(t=>/^g-/.test(t.id)).length} заданий лежат среди ваших. Если вы загрузили новую базу на сервер, старую можно удалить. Задания в выданных домашках останутся.</p></div><button class="danger" data-a="boldclean">Удалить старую</button></div>`:''}
  <div class="extabs rise">${Object.entries(EXAMS).map(([k,v])=>`<button data-a="bex" data-v="${k}" class="${k===ex?'act':''}">${esc(v.t)}<i>${Bank.count(k)||''}</i></button>`).join('')}</div>
  <div class="bankg rise"><aside class="panel nlist"><button class="nrow${BV.num==null?' act':''}" data-a="bnum" data-v=""><b></b><span>Все номера</span><i>${all.length||''}</i></button>${nums}${extra.map(n=>`<button class="nrow${BV.num===n?' act':''}" data-a="bnum" data-v="${esc(n)}"><b>${esc(n)}</b><span>вне каталога</span><i>${all.filter(x=>x.num===n).length}</i></button>`).join('')}
   ${E.bank?`<p class="hint" style="margin:14px 4px 0">Официальные материалы: <a class="who" href="${E.bank}" target="_blank" rel="noopener">открытый банк</a>, <a class="who" href="${E.demo}" target="_blank" rel="noopener">демоверсии</a>.</p>`:''}</aside>
@@ -1740,12 +1767,13 @@ async function viewBank(){await Bank.load();document.title='База задан�
   ${list.length?`<div class="tgrid">${list.slice(0,BV.lim).map(taskCard).join('')}</div>${list.length>BV.lim?`<div style="text-align:center;margin-top:16px"><button data-a="bmore">Показать ещё (${list.length-BV.lim})</button></div>`:''}`
    :`<div class="panel empty" style="text-align:center;padding:40px">Здесь пока пусто. Загрузите PDF варианта: сайт найдёт задания по номерам и ответы, если они есть в файле.</div>`}
  </section></div></main>`;
- lazyImgs(app);$('#bpack').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)packImport(f)};$('#bimp').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)Imp.open(f,BV.ex)};
+ lazyImgs(app);$('#bpack').onchange=async e=>{const f=[...e.target.files];e.target.value='';if(!f.length)return;
+  if(!Packs.on())return packImport(f);try{const n=await Packs.upload(f);toast('Готовая база на сервере: '+n+' '+plural(n,'задание','задания','заданий'),5000);viewBank()}catch(err){toast(err.message,5000)}};$('#bimp').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)Imp.open(f,BV.ex)};
  const q=$('#bq');q.oninput=()=>{clearTimeout(BV.qt);BV.qt=setTimeout(()=>{BV.q=q.value.trim();BV.lim=60;viewBank().then(()=>{const n=$('#bq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})},300)}}
 function numSort(a,b){const x=parseFloat(a),y=parseFloat(b);if(isFinite(x)&&isFinite(y))return x-y;return String(a).localeCompare(String(b))}
 function taskCard(t){const on=BV.sel.has(t.id);return `<article class="tcard${on?' on':''}" data-id="${t.id}"><label class="tchk" title="Выбрать"><input type="checkbox" data-a="bsel" data-id="${t.id}"${on?' checked':''}></label>
  <div class="timg${t.fig?' fig':''}" data-a="bview" data-id="${t.id}">${t.img===false||t.fig?`<p>${esc((t.text||'').slice(0,t.fig?220:300))}</p>`:''}${t.img===false?'':`<img data-tid="${t.id}" alt="Задание ${esc(t.num)}">`}</div>
- <div class="tmeta"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':t.ans?`<span class="ans" title="Ответ">${esc(t.ans)}</span>`:'<span class="chip neg">нет ответа</span>'}${t.file?'<span class="chip" title="К заданию прилагается файл">файл</span>':''}${t.hide?'<span class="chip neg" title="Скрыто из тренажёра">скрыто</span>':''}<span class="grow"></span>
+ <div class="tmeta"><span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">фото</span>':t.ans?`<span class="ans" title="Ответ">${esc(t.ans)}</span>`:'<span class="chip neg">нет ответа</span>'}${t.sub?`<span class="chip" title="Тип задания">${esc(t.sub)}</span>`:''}${t.file?'<span class="chip" title="К заданию прилагается файл">файл</span>':''}${t.hide?'<span class="chip neg" title="Скрыто из тренажёра">скрыто</span>':''}<span class="grow"></span>
  <button class="mini icb" data-a="bedit" data-id="${t.id}" title="Изменить" aria-label="Изменить">${ic('pen')}</button></div>${t.src?`<small>${esc(t.src)}</small>`:''}</article>`}
 
 /* ---------- импорт: PDF и картинки ---------- */
@@ -1809,7 +1837,15 @@ const Imp={
    await Bank.save();w.remove();toast('Сохранено заданий: '+n);BV.ex=exv;BV.num=null;if(location.hash==='#/bank')viewBank();else location.hash='#/bank'}}};
 
 /* ---------- карточка задания: просмотр и правка ---------- */
-async function editTask(t){const img=await taskImg(t.id),E=EXAMS[t.exam];const w=document.createElement('div');w.className='modal';
+async function packTaskView(t){const img=t.img===false?null:await taskImg(t.id);const w=document.createElement('div');w.className='modal';
+ w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2><p class="hint" style="margin-top:-6px">Готовая база${t.sub?' · '+esc(t.sub):''}</p>${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
+  ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}<p>Ответ: <b>${esc(t.ans||'—')}</b></p>${t.sol?`<details><summary>Решение</summary><pre class="sol">${esc(t.sol)}</pre></details>`:''}
+  <label class="chkl"><input type="checkbox" data-k="hide"${t.hide?' checked':''}> Скрыть из тренажёра учеников</label>
+  <div class="mact"><button data-m="no">Закрыть</button></div></div>`;
+ document.body.appendChild(w);const close=()=>w.remove();
+ w.addEventListener('click',e=>{if(e.target===w)return close();const b=e.target.closest('[data-m]');if(!b)return;if(b.dataset.m==='file')TaskFiles.download(t.file);if(b.dataset.m==='no')close()});
+ $('[data-k=hide]',w).onchange=e=>{Packs.hide([t.id],e.target.checked);viewBank()}}
+async function editTask(t){if(t.pack)return packTaskView(t);const img=await taskImg(t.id),E=EXAMS[t.exam];const w=document.createElement('div');w.className='modal';
  w.innerHTML=`<div class="mbox wide"><h2>Задание ${esc(numLabel(t.exam,t.num))}</h2>${t.fig||t.img===false?`<p class="ttext">${esc(t.text||'')}</p>`:''}${img?`<img class="tbig" src="${img}" alt="">`:''}
   ${t.file?`<p><button class="mini" data-m="file">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}${t.sol?`<details><summary>Решение</summary><pre class="sol">${esc(t.sol)}</pre></details>`:''}
   <div class="form"><span>Экзамен</span><select data-k="exam">${Object.entries(EXAMS).map(([k,v])=>`<option value="${k}"${k===t.exam?' selected':''}>${esc(v.t)}</option>`).join('')}</select>
@@ -1839,7 +1875,7 @@ async function newTask(){const w=document.createElement('div');w.className='moda
 
 /* ---------- выбор заданий и назначение ученику ---------- */
 async function pickTasks(title){await Bank.load();return new Promise(res=>{let ex=BV.ex,num=null;const sel=new Set(BV.sel);const w=document.createElement('div');w.className='modal';
- const draw=()=>{const E=EXAMS[ex],list=Bank.meta.filter(t=>t.exam===ex&&(num==null||t.num===num)).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at);
+ const draw=()=>{if(!Packs.ready(ex)){Packs.loadExam(ex).then(draw);}const E=EXAMS[ex],list=Bank.items(ex,num).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at);
   w.innerHTML=`<div class="mbox wide tall"><h2>${esc(title)}</h2><div class="form"><select id="pkex">${Object.entries(EXAMS).map(([k,v])=>`<option value="${k}"${k===ex?' selected':''}>${esc(v.t)} (${Bank.count(k)})</option>`).join('')}</select>
    <select id="pkn"><option value="">Все номера</option>${E.nums.map(([n,t])=>`<option value="${esc(n)}"${n===num?' selected':''}>${esc(E.topic?t:n+' · '+t)} (${Bank.count(ex,n)})</option>`).join('')}</select><span class="grow"></span><span class="chip">выбрано: ${sel.size}</span></div>
    <div class="pgrid">${list.map(t=>`<label class="pcard${sel.has(t.id)?' on':''}"><input type="checkbox" data-id="${t.id}"${sel.has(t.id)?' checked':''}><img data-tid="${t.id}" alt=""><span>${esc(numLabel(t.exam,t.num))}${t.ans?' · '+esc(t.ans):''}</span></label>`).join('')||'<p class="empty">Здесь пока нет заданий. Загрузите PDF на странице «База заданий».</p>'}</div>
@@ -1911,7 +1947,7 @@ function shrinkPhoto(file){return new Promise(res=>{const rd=new FileReader();rd
 function wrapText(s,n){const out=[];for(const para of String(s).split('\n')){let line='';for(const w of para.split(' ')){if((line+' '+w).trim().length>n&&line){out.push(line);line=w}else line=(line?line+' ':'')+w}out.push(line)}return out}
 const Drawer={ex:null,num:null,
  async toggle(){const d=$('#tdrawer');if(!d)return;if(!d.hidden){d.hidden=true;return}await Bank.load();this.ex=this.ex||BV.ex;d.hidden=false;this.draw()},
- draw(){const d=$('#tdrawer'),E=EXAMS[this.ex],list=Bank.meta.filter(t=>t.exam===this.ex&&(this.num==null||t.num===this.num)).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at).slice(0,120);
+ draw(){if(!Packs.ready(this.ex)){Packs.loadExam(this.ex).then(()=>this.draw()).catch(()=>{})}const d=$('#tdrawer'),E=EXAMS[this.ex],list=Bank.items(this.ex,this.num).sort((a,b)=>numSort(a.num,b.num)||a.at-b.at).slice(0,120);
   d.innerHTML=`<div class="cardh"><h3>Задания</h3><button class="mini icb" data-a="tdclose" aria-label="Закрыть">${ic('x')}</button></div>
    <select id="tdex">${Object.entries(EXAMS).map(([k,v])=>`<option value="${k}"${k===this.ex?' selected':''}>${esc(v.t)} (${Bank.count(k)})</option>`).join('')}</select>
    <select id="tdn"><option value="">Все номера</option>${E.nums.map(([n,t])=>`<option value="${esc(n)}"${n===this.num?' selected':''}>${esc(E.topic?t:n+' · '+t)}</option>`).join('')}</select>
@@ -1922,15 +1958,16 @@ const Drawer={ex:null,num:null,
 
 Object.assign(A,{
  bfipi(){fipiOpen()},
- async bhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))t.hide=true;await Bank.save();toast('Скрыто из тренажёра: '+BV.sel.size);viewBank()},
- async bunhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))delete t.hide;await Bank.save();toast('Открыто ученикам: '+BV.sel.size);viewBank()},
+ async boldclean(){const ids=(Bank.meta||[]).filter(t=>/^g-/.test(t.id)).map(t=>t.id);if(!await sure(`Удалить ${ids.length} заданий старой базы?`,'Ваши собственные задания и загруженные PDF останутся.','Удалить',true))return;toast('Удаляю…',60000);Vault.bulk=true;try{await Bank.del(ids)}finally{Vault.bulk=false;Vault.saveMeta();Vault.later(300)}toast('Старая база удалена');viewBank()},
+ async bhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))t.hide=true;await Bank.save();Packs.hide([...BV.sel].filter(id=>Packs.byId.has(id)),true);toast('Скрыто из тренажёра: '+BV.sel.size);viewBank()},
+ async bunhide(){await Bank.load();for(const t of Bank.meta)if(BV.sel.has(t.id))delete t.hide;await Bank.save();Packs.hide([...BV.sel].filter(id=>Packs.byId.has(id)),false);toast('Открыто ученикам: '+BV.sel.size);viewBank()},
  bex(el){BV.ex=el.dataset.v;BV.num=null;BV.lim=60;viewBank()},
  bnum(el){BV.num=el.dataset.v||null;BV.lim=60;viewBank()},
  bmore(){BV.lim+=60;viewBank()},
  bsel(el){el.checked?BV.sel.add(el.dataset.id):BV.sel.delete(el.dataset.id);viewBank()},
- bselall(){for(const t of Bank.meta.filter(t=>t.exam===BV.ex&&(BV.num==null||t.num===BV.num)))BV.sel.add(t.id);viewBank()},
+ bselall(){for(const t of Bank.items(BV.ex,BV.num))BV.sel.add(t.id);viewBank()},
  bselnone(){BV.sel.clear();viewBank()},
- async bdelsel(){if(!await sure('Удалить выбранные задания ('+BV.sel.size+')?','','Удалить',true))return;await Bank.del([...BV.sel]);BV.sel.clear();viewBank()},
+ async bdelsel(){const ids=[...BV.sel].filter(id=>!Packs.byId.has(id));if(!ids.length)return toast('Задания из готовой базы удалить нельзя — их можно скрыть от учеников');if(!await sure('Удалить выбранные задания ('+ids.length+')?',ids.length<BV.sel.size?'Задания из готовой базы не удаляются.':'','Удалить',true))return;await Bank.del(ids);BV.sel.clear();viewBank()},
  bview(el){const t=Bank.get(el.dataset.id);if(t)editTask(t)},bedit(el){const t=Bank.get(el.dataset.id);if(t)editTask(t)},
  bnew(){newTask()},
  async bassign(){const s=await chooseStudent();if(s)assignTo(s,[...BV.sel])},
@@ -1996,7 +2033,7 @@ async function viewPractice(token,ex,mode,arg){const my=rid;PR.token=token;PR.st
   <div class="bar"><i style="width:${p}%"></i></div><small>${s.ok} из ${counts[n]}${s.tried?` · точность ${Math.round(s.ok/s.tried*100)}%`:''}</small></a>`}).join('')}</div></main>`;
 }
 function prTaskHTML(t,i,variant){const done=PR.res[t.id];return `<section class="panel hwt prt${PR.anim?' rise':''}" data-id="${esc(t.id)}">
-  <div class="rhead">${variant?`<b>${i+1}.</b>`:''}<span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.kind==='photo'?'<span class="chip warn">развёрнутый ответ</span>':''}<span class="grow"></span>${done?(done.ok===true?'<span class="chip ok">верно</span>':done.ok===false?'<span class="chip neg">неверно</span>':''):''}</div>
+  <div class="rhead">${variant?`<b>${i+1}.</b>`:''}<span class="chip">${esc(numLabel(t.exam,t.num))}</span>${t.sub?`<span class="chip soft">${esc(t.sub)}</span>`:''}${t.kind==='photo'?'<span class="chip warn">развёрнутый ответ</span>':''}<span class="grow"></span>${done?(done.ok===true?'<span class="chip ok">верно</span>':done.ok===false?'<span class="chip neg">неверно</span>':''):''}</div>
   ${t.text?`<p class="ttext">${esc(t.text)}</p>`:''}${t.img?`<img class="tbig" src="${prImg(t.id)}" alt="Условие задания" loading="lazy">`:''}
   ${t.file?`<p><button class="mini" data-a="prfile" data-id="${esc(t.id)}">${ic('down')}Скачать файл ${esc(t.file.name||'')}</button></p>`:''}
   ${t.kind==='photo'?`<p class="hint">Решите на листе или в редакторе, затем откройте ответ и честно отметьте результат.</p>`:`<div class="form"><input data-pa="${esc(t.id)}" placeholder="${t.kind==='choice'?'Буквы ответа, например AC':'Ваш ответ'}" autocomplete="off" value="${esc(done&&done.given||'')}"${done&&!variant?' disabled':''}></div>`}
@@ -2009,12 +2046,14 @@ async function prSolve(ex,mode,arg){const my=rid,tok=PR.token;PR.mode=mode;PR.re
   :await prApi(`/api/practice/variant?t=${encodeURIComponent(tok)}&ex=${ex}${arg?'&name='+encodeURIComponent(arg):''}`)}catch(e){toast(e.message);location.hash=`#/practice/${tok}/${ex}`;return}
  if(my!==rid)return;
  const prog=PR.cat.progress||{};
- if(mode==='n'){const fresh=PR.list.filter(t=>!(prog[t.id]&&prog[t.id][0]));PR.list=fresh.concat(PR.list.filter(t=>prog[t.id]&&prog[t.id][0]));PR.i=0}
+ if(mode==='n'){const fresh=PR.list.filter(t=>!(prog[t.id]&&prog[t.id][0]));PR.list=fresh.concat(PR.list.filter(t=>prog[t.id]&&prog[t.id][0]));PR.i=0;PR.all=PR.list;PR.sub=''}
  PR.anim=true;PR.title=mode==='n'?`${numLabel(ex,arg)} · ${numTitle(ex,arg)}`:(arg||'Свой вариант');
  prDraw()}
 function prDraw(){setTimeout(()=>PR.anim=false,0);const tok=PR.token,ex=PR.ex;const back=`<a class="btn ghost" href="#/practice/${esc(tok)}/${ex}">${ic('back')}<span class="nl">Тренажёр</span></a>`;
  if(PR.mode==='n'){const t=PR.list[PR.i];const solved=PR.list.filter(x=>(PR.cat.progress[x.id]||[])[0]).length;
-  app.innerHTML=navHTML(back)+`<main class="wrap hw"><div class="shead${PR.anim?' rise':''}"><div><h1>${esc(PR.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Задание ${PR.i+1} из ${PR.list.length} · решено верно: ${solved}</p></div></div>
+  const subs=[...new Set((PR.all||[]).map(x=>x.sub).filter(Boolean))];
+  const subBar=subs.length>1?`<div class="subbar${PR.anim?' rise':''}"><button class="${PR.sub?'':'act'}" data-a="prsub" data-v="">Все типы</button>${subs.map(x=>{const a=PR.all.filter(y=>y.sub===x),ok=a.filter(y=>(PR.cat.progress[y.id]||[])[0]).length;return `<button class="${PR.sub===x?'act':''}" data-a="prsub" data-v="${esc(x)}">${esc(x)}<i>${ok}/${a.length}</i></button>`}).join('')}</div>`:'';
+  app.innerHTML=navHTML(back)+`<main class="wrap hw"><div class="shead${PR.anim?' rise':''}"><div><h1>${esc(PR.title)}</h1><p class="hint" style="margin:8px 0 0;font-size:15px">Задание ${PR.i+1} из ${PR.list.length} · решено верно: ${solved}</p></div></div>${subBar}
    ${t?prTaskHTML(t,PR.i,false):'<p class="panel empty">Заданий нет.</p>'}
    <div class="prnav${PR.anim?' rise':''}"><button data-a="prprev"${PR.i?'':' disabled'}>${ic('left')}Назад</button>${t&&t.kind!=='photo'&&!PR.res[t.id]?`<button class="pri" data-a="prcheck">Проверить</button><button data-a="prshow">Показать ответ</button>`:t&&t.kind==='photo'&&!PR.res[t.id]?`<button class="pri" data-a="prshow">Показать ответ</button>`:''}<span class="grow"></span><button data-a="prnext"${PR.i<PR.list.length-1?'':' disabled'}>Дальше${ic('right')}</button></div></main>`;
   const inp=$('[data-pa]');if(inp&&!inp.disabled){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter')A.prcheck()}}return}
@@ -2025,6 +2064,7 @@ function prDraw(){setTimeout(()=>PR.anim=false,0);const tok=PR.token,ex=PR.ex;co
 async function prSend(items){try{return await prApi('/api/practice/check',{t:PR.token,items})}catch(e){toast(e.message||'Сервер не отвечает');return null}}
 function prRemember(id,ok){const p=PR.cat.progress[id]||[0,0,0,0,PR.ex,(PR.list.find(t=>t.id===id)||{}).num];p[0]=Math.max(p[0],+ok);p[1]=+ok;p[2]++;p[3]=Date.now();PR.cat.progress[id]=p}
 Object.assign(A,{
+ prsub(el){PR.sub=el.dataset.v;const prog=PR.cat.progress||{};const l=(PR.all||[]).filter(t=>!PR.sub||t.sub===PR.sub);PR.list=l.filter(t=>!(prog[t.id]&&prog[t.id][0])).concat(l.filter(t=>prog[t.id]&&prog[t.id][0]));PR.i=0;prDraw()},
  prprev(){if(PR.i>0){PR.i--;prDraw()}},prnext(){if(PR.i<PR.list.length-1){PR.i++;prDraw()}},
  async prcheck(){const t=PR.list[PR.i];if(!t||PR.res[t.id])return;const v=($('[data-pa]')||{}).value||'';if(!v.trim())return toast('Впишите ответ');
   const r=await prSend([{id:t.id,answer:v.trim()}]);if(!r||!r[t.id])return;PR.res[t.id]={...r[t.id],given:v.trim()};prRemember(t.id,r[t.id].ok);prDraw();toast(r[t.id].ok?'Верно!':'Неверно')},
